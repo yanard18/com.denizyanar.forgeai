@@ -52,16 +52,40 @@ namespace DenizYanar.ForgeAI.Tasks
             DrawTaskHistory();
         }
 
+        // Add this method to the class to ensure the UI updates 
+        // immediately when you select/deselect files in the Project window.
+        private void OnSelectionChange()
+        {
+            Repaint();
+        }
+
         private void DrawInputArea()
         {
             GUILayout.BeginVertical(EditorStyles.helpBox);
             GUILayout.Space(5);
 
-            // Row 1: Task Selection
+            // Row 1: Task Selection & File Count
             GUILayout.BeginHorizontal();
             GUILayout.Label(EditorGUIUtility.IconContent("d_SettingsIcon"), GUILayout.Width(20), GUILayout.Height(20));
             GUILayout.Label("Task Mode:", GUILayout.Width(70));
             _selectedTaskIndex = EditorGUILayout.Popup(_selectedTaskIndex, _taskDisplayNames);
+
+            // --- NEW CODE STARTS HERE ---
+            GUILayout.FlexibleSpace(); // Push the count to the right side
+
+            int selectionCount = Selection.objects.Length;
+            string labelText = $"{selectionCount} File{(selectionCount != 1 ? "s" : "")} Selected";
+
+            // Style it: Gray normally, Reddish if 0 (visual warning)
+            var countStyle = new GUIStyle(EditorStyles.miniLabel) { alignment = TextAnchor.MiddleRight };
+            if (selectionCount == 0)
+            {
+                countStyle.normal.textColor = new Color(1f, 0.6f, 0.6f); // Soft Red
+            }
+
+            GUILayout.Label(labelText, countStyle);
+            // --- NEW CODE ENDS HERE ---
+
             GUILayout.EndHorizontal();
 
             GUILayout.Space(5);

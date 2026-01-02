@@ -47,7 +47,7 @@ namespace DenizYanar.ForgeAI.Tasks
         {
             // A. Get current Git Status
             string status = RunGitCommand("status");
-            string recentLog = RunGitCommand("log -n 3 --oneline");
+            string recentLog = RunGitCommand("log -n 30 --oneline --all");
 
             StringBuilder sb = new StringBuilder();
             sb.AppendLine("You are a Git Expert Assistant.");
