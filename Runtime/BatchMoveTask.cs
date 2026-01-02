@@ -8,10 +8,9 @@ namespace DenizYanar.ForgeAI.Tasks
 {
     public class BatchMoveTask : AITask
     {
-        public override string DisplayName => "Batch Move";
-        public override bool CanUndo => true; // Explicitly stating capability
+        public override string DisplayName => "Batch Move / Organize Files";
+        public override bool CanUndo => true;
 
-        #region Data Structures
         [System.Serializable]
         private class FileMoveOperation
         {
@@ -30,17 +29,15 @@ namespace DenizYanar.ForgeAI.Tasks
             public string OriginalSource;
             public string CurrentLocation;
         }
-        #endregion
 
-        #region State
         private List<FileMoveOperation> _proposedOperations = new();
         private Stack<CompletedMove> _executionHistory = new();
+        // Track folders created specifically by this task
+        private HashSet<string> _createdFolders = new(); 
         private string _rawJsonForDebug;
-        #endregion
 
         public override string GenerateFullPrompt(string userInstruction)
         {
-            // Simplified selection logic using LINQ
             var selectedPaths = Selection.objects
                 .Select(AssetDatabase.GetAssetPath)
                 .Where(path => !string.IsNullOrEmpty(path))
@@ -72,7 +69,6 @@ namespace DenizYanar.ForgeAI.Tasks
         {
             _rawJsonForDebug = rawResponse;
 
-            // Simplified string cleaning
             string cleanJson = rawResponse.Replace("```json", "").Replace("```", "").Trim();
 
             try
@@ -91,7 +87,6 @@ namespace DenizYanar.ForgeAI.Tasks
 
         public override void DrawUI()
         {
-            // Case 1: Error or Empty
             if (_proposedOperations == null || _proposedOperations.Count == 0)
             {
                 EditorGUILayout.HelpBox("No valid move operations found in AI response.", MessageType.Warning);
@@ -100,7 +95,6 @@ namespace DenizYanar.ForgeAI.Tasks
                 return;
             }
 
-            // Case 2: Plan Phase
             if (!IsExecuted && !IsUndone)
             {
                 EditorGUILayout.LabelField($"Proposed Moves ({_proposedOperations.Count}):", EditorStyles.boldLabel);
@@ -117,18 +111,16 @@ namespace DenizYanar.ForgeAI.Tasks
                 GUILayout.Space(5);
                 if (GUILayout.Button("Confirm & Execute Move")) Execute();
             }
-            // Case 3: Execution Success Phase
             else if (IsExecuted && !IsUndone)
             {
                 EditorGUILayout.HelpBox(ExecutionResult, MessageType.Info);
                 GUILayout.Space(5);
                 
                 var defaultColor = GUI.backgroundColor;
-                GUI.backgroundColor = new Color(1f, 0.7f, 0.7f); // Reddish tint
+                GUI.backgroundColor = new Color(1f, 0.7f, 0.7f);
                 if (GUILayout.Button("Undo Changes")) Undo();
                 GUI.backgroundColor = defaultColor;
             }
-            // Case 4: Undone Phase
             else if (IsUndone)
             {
                 EditorGUILayout.HelpBox($"Reverted: {ExecutionResult}", MessageType.Warning);
@@ -144,6 +136,7 @@ namespace DenizYanar.ForgeAI.Tasks
             List<string> errors = new List<string>();
 
             _executionHistory.Clear();
+            _createdFolders.Clear();
 
             foreach (var op in _proposedOperations)
             {
@@ -182,16 +175,42 @@ namespace DenizYanar.ForgeAI.Tasks
 
             int undoCount = 0;
 
+            // 1. Revert Files
             while (_executionHistory.Count > 0)
             {
                 var move = _executionHistory.Pop();
 
-                EnsureDirectoryExists(move.OriginalSource);
+                // Ensure original folder still exists (in case user deleted it manually)
+                string originalDir = System.IO.Path.GetDirectoryName(move.OriginalSource);
+                if (!string.IsNullOrEmpty(originalDir) && !System.IO.Directory.Exists(originalDir))
+                {
+                     System.IO.Directory.CreateDirectory(originalDir);
+                }
 
                 string err = AssetDatabase.MoveAsset(move.CurrentLocation, move.OriginalSource);
 
                 if (string.IsNullOrEmpty(err)) undoCount++;
                 else Debug.LogError($"Undo Failed for {move.CurrentLocation}: {err}");
+            }
+
+            // 2. Clean up Created Folders (Deepest first)
+            // We sort by length descending to ensure subfolders (longer paths) are deleted before their parents.
+            var foldersToDelete = _createdFolders.OrderByDescending(path => path.Length).ToList();
+
+            foreach (var folder in foldersToDelete)
+            {
+                // Only delete if we created it AND it is now empty
+                if (System.IO.Directory.Exists(folder))
+                {
+                    var files = System.IO.Directory.GetFiles(folder);
+                    var dirs = System.IO.Directory.GetDirectories(folder);
+
+                    // If empty (ignoring .meta files which Unity handles)
+                    if (files.Length == 0 && dirs.Length == 0)
+                    {
+                        AssetDatabase.DeleteAsset(folder);
+                    }
+                }
             }
 
             IsUndone = true;
@@ -202,10 +221,11 @@ namespace DenizYanar.ForgeAI.Tasks
 
         private void EnsureDirectoryExists(string assetPath)
         {
-            var folder = System.IO.Path.GetDirectoryName(assetPath);
+            string folder = System.IO.Path.GetDirectoryName(assetPath);
             if (!string.IsNullOrEmpty(folder) && !System.IO.Directory.Exists(folder))
             {
                 System.IO.Directory.CreateDirectory(folder);
+                _createdFolders.Add(folder); // Track creation
                 AssetDatabase.Refresh();
             }
         }
