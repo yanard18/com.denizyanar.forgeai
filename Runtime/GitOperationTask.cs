@@ -55,6 +55,7 @@ namespace DenizYanar.ForgeAI.Tasks
             sb.AppendLine("2. DO NOT use pipes (|), redirection (>), or chain commands (&&).");
             sb.AppendLine("3. DO NOT use Linux utilities like 'grep', 'sort', 'uniq', 'head', or 'tail'.");
             sb.AppendLine("4. Use ONLY native Git arguments. (e.g., use 'git log -n 5' instead of 'git log | head -n 5').");
+            sb.AppendLine("5. while commit use \" instead of '");
             sb.AppendLine(
                 "Based on the user's instruction and the current repository status, generate a list of git terminal commands to execute.");
             sb.AppendLine("Return ONLY valid JSON.");
