@@ -1,145 +1,178 @@
 using System.Collections.Generic;
-using DenizYanar.ForgeAI.Editor; // Assuming your Preference script is here
 using UnityEditor;
 using UnityEngine;
+using System.Linq;
+using DenizYanar.ForgeAI.Editor;
 
-namespace DenizYanar.ForgeAI
+namespace DenizYanar.ForgeAI.Tasks
 {
     public class AIWindow : EditorWindow
     {
         private string _currentPrompt = "";
         private Vector2 _scrollPosition;
-        private readonly List<AITask> _tasks = new();
 
-        [MenuItem("Tools/Unity 6 AI Agent")]
+        // Task Selection
+        private int _selectedTaskIndex = 0;
+        private List<AITask> _availableTaskTemplates;
+        private string[] _taskDisplayNames;
+
+        private readonly List<AIInteraction> _interactions = new();
+
+        [MenuItem("Tools/Forge AI Agent")]
         public static void ShowWindow() => GetWindow<AIWindow>("AI Agent");
+
+        private void OnEnable()
+        {
+            // Initialize available tasks
+            _availableTaskTemplates = new List<AITask>
+            {
+                new MessageTask(), // Assuming you have a basic text chat task
+                new BatchMoveTask()
+            };
+
+            _taskDisplayNames = _availableTaskTemplates.Select(x => x.DisplayName).ToArray();
+        }
 
         private void OnGUI()
         {
-            GUILayout.Label("AI Assistant (Multi-Threaded)", EditorStyles.boldLabel);
-
+            GUILayout.Label("AI Assistant", EditorStyles.boldLabel);
             DrawInputArea();
             DrawTaskHistory();
         }
 
         private void DrawInputArea()
         {
-            GUILayout.Label("New Prompt:");
+            GUILayout.BeginVertical(EditorStyles.helpBox);
+
+            // Task Selector
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Task Type:", GUILayout.Width(80));
+            _selectedTaskIndex = EditorGUILayout.Popup(_selectedTaskIndex, _taskDisplayNames);
+            GUILayout.EndHorizontal();
+
+            GUILayout.Label("Instruction:");
             _currentPrompt = EditorGUILayout.TextArea(_currentPrompt, GUILayout.Height(60));
 
             GUILayout.BeginHorizontal();
 
-            if (GUILayout.Button("Send Request", GUILayout.Height(30)))
+            if (GUILayout.Button("Execute Request", GUILayout.Height(30)))
             {
                 if (!string.IsNullOrWhiteSpace(_currentPrompt))
                 {
-                    FireAndForgetTask(_currentPrompt);
-                    _currentPrompt = ""; // Clear input for the next one
-                    GUI.FocusControl(null); // Unfocus text area
+                    PerformTask(_currentPrompt);
+                    _currentPrompt = "";
+                    GUI.FocusControl(null);
                 }
             }
 
             if (GUILayout.Button("Clear History", GUILayout.Height(30), GUILayout.Width(100)))
             {
-                _tasks.Clear();
+                _interactions.Clear();
             }
 
             GUILayout.EndHorizontal();
-            GUILayout.Space(15);
+            GUILayout.EndVertical();
+        }
+
+        private async void PerformTask(string userPrompt)
+        {
+            var storedKey = AIProjectPreferences.APIKey; // Ensure you have this class
+            if (string.IsNullOrEmpty(storedKey))
+            {
+                Debug.LogError("No API Key found.");
+                return;
+            }
+
+            // 1. Create a specific instance of the selected task
+            // We use Activator to create a fresh copy of the selected template type
+            var template = _availableTaskTemplates[_selectedTaskIndex];
+            var activeTask = (AITask)System.Activator.CreateInstance(template.GetType());
+
+            // 2. Ask the TASK to build the prompt (injecting context/json rules)
+            string fullPromptToSend = activeTask.GenerateFullPrompt(userPrompt);
+
+            // 3. Create UI Interaction container
+            var newInteraction = new AIInteraction
+            {
+                UserPrompt = userPrompt,
+                Status = "Thinking...",
+                ActiveTask = activeTask // Store the logic inside the history item
+            };
+            _interactions.Add(newInteraction);
+
+            // 4. Send Request
+            var rawResponse = await AIClient.SendRequestAsync(fullPromptToSend, storedKey);
+
+            if (string.IsNullOrEmpty(rawResponse))
+            {
+                newInteraction.Status = "Error";
+                newInteraction.ErrorMessage = "AI returned no data.";
+            }
+            else
+            {
+                // 5. Pass response back to the Task to parse
+                activeTask.ProcessResponse(rawResponse);
+
+                newInteraction.Status = "Ready";
+                newInteraction.IsCompleted = true;
+            }
+
+            Repaint();
         }
 
         private void DrawTaskHistory()
         {
-            GUILayout.Label("Active Tasks & History:", EditorStyles.boldLabel);
+            GUILayout.Label("History:", EditorStyles.boldLabel);
 
             using var scrollView = new EditorGUILayout.ScrollViewScope(_scrollPosition);
             _scrollPosition = scrollView.scrollPosition;
 
-            // Iterate backwards to show newest tasks at the top
-            for (int i = _tasks.Count - 1; i >= 0; i--)
+            // Iterate backwards to show newest at bottom (or top depending on pref)
+            // Here we iterate backwards to render recent at bottom if using Flex layout, 
+            // but standard Unity GUI draws top-down. 
+            // Let's draw normally (Oldest -> Newest) or reverse. 
+            // Usually chat logs are Top=Old, Bottom=New.
+            for (int i = 0; i < _interactions.Count; i++)
             {
-                var task = _tasks[i];
-                DrawTaskItem(task);
+                DrawInteractionItem(_interactions[i]);
             }
         }
 
-        private void DrawTaskItem(AITask task)
+        private void DrawInteractionItem(AIInteraction interaction)
         {
             GUILayout.BeginVertical(EditorStyles.helpBox);
 
-            // Header: Status and Time
+            // Header
             GUILayout.BeginHorizontal();
-            GUILayout.Label($"<b>Q:</b> {task.Prompt}",
-                new GUIStyle(EditorStyles.label) { richText = true, wordWrap = false });
-
-            var statusStyle = task.IsCompleted ? EditorStyles.label : EditorStyles.miniLabel;
-            var statusColor = task.IsCompleted ? (task.HasError ? Color.red : Color.green) : Color.yellow;
-
-            var originalColor = GUI.color;
-            GUI.color = statusColor;
-            GUILayout.Label(task.Status, statusStyle, GUILayout.Width(80));
-            GUI.color = originalColor;
-
+            GUILayout.Label($"<b>User:</b> {interaction.UserPrompt}",
+                new GUIStyle(EditorStyles.label) { richText = true });
+            GUILayout.FlexibleSpace();
+            GUILayout.Label(interaction.Status, EditorStyles.miniLabel);
             GUILayout.EndHorizontal();
 
-            // Body: The Response
-            if (!string.IsNullOrEmpty(task.Response))
+            // Task Body
+            if (interaction.ActiveTask != null)
             {
                 GUILayout.Space(5);
-                EditorGUILayout.TextArea(task.Response, EditorStyles.wordWrappedLabel);
+                interaction.ActiveTask.DrawUI();
+            }
+            else if (!string.IsNullOrEmpty(interaction.ErrorMessage))
+            {
+                EditorGUILayout.HelpBox(interaction.ErrorMessage, MessageType.Error);
             }
 
             GUILayout.EndVertical();
-            GUILayout.Space(5);
+            GUILayout.Space(10);
         }
 
-        private async void FireAndForgetTask(string prompt)
+        // Simple container for History
+        public class AIInteraction
         {
-            var storedKey = AIProjectPreferences.APIKey;
-
-            if (string.IsNullOrEmpty(storedKey))
-            {
-                if (EditorUtility.DisplayDialog("Missing Key", "Please set your API Key in Preferences.", "Open Prefs",
-                        "Cancel"))
-                {
-                    SettingsService.OpenUserPreferences("Preferences/AI Assistant");
-                }
-
-                return;
-            }
-
-            // 1. Create and register the task
-            var newTask = new AITask { Prompt = prompt, Status = "Thinking..." };
-            _tasks.Add(newTask);
-
-            // 2. Run the logic (does not block the UI)
-            var result = await AIClient.SendRequestAsync(prompt, storedKey);
-
-            // 3. Update the specific task instance
-            if (string.IsNullOrEmpty(result))
-            {
-                newTask.Response = "Error: No response or failure.";
-                newTask.Status = "Failed";
-                newTask.HasError = true;
-            }
-            else
-            {
-                newTask.Response = result;
-                newTask.Status = "Done";
-            }
-
-            newTask.IsCompleted = true;
-            Repaint(); // Refresh UI to show the new state
-        }
-
-        // Simple data class to hold state for each request
-        private class AITask
-        {
-            public string Prompt;
-            public string Response;
+            public string UserPrompt;
             public string Status;
             public bool IsCompleted;
-            public bool HasError;
+            public string ErrorMessage;
+            public AITask ActiveTask;
         }
     }
 }

@@ -10,7 +10,7 @@ namespace DenizYanar.ForgeAI
     {
         private const string ApiUrl = "https://api.openai.com/v1/chat/completions";
         private const string ContentType = "application/json";
-        private const string SystemInstruction = "You are a Unity helper. Respond with C# code only when asked.";
+        private const string SystemInstruction = "You are a Unity AI agent";
 
         public static async Awaitable<string> SendRequestAsync(string userPrompt, string apiKey)
         {
