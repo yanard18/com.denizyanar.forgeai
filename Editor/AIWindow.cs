@@ -27,7 +27,7 @@ namespace DenizYanar.ForgeAI.Tasks
             // Initialize available tasks
             _availableTaskTemplates = new List<AITask>
             {
-                new MessageTask(), 
+                new MessageTask(),
                 new BatchMoveTask(),
                 new BatchRenameTask(),
                 new GitOperationTask(),
@@ -42,13 +42,13 @@ namespace DenizYanar.ForgeAI.Tasks
             GUILayout.BeginVertical(EditorStyles.helpBox);
             GUILayout.Label("Forge AI Assistant", EditorStyles.boldLabel);
             GUILayout.EndVertical();
-            
+
             GUILayout.Space(5);
-            
+
             DrawInputArea();
-            
+
             GUILayout.Space(5);
-            
+
             DrawTaskHistory();
         }
 
@@ -79,8 +79,9 @@ namespace DenizYanar.ForgeAI.Tasks
             // Highlight the Execute button
             var defaultColor = GUI.backgroundColor;
             GUI.backgroundColor = new Color(0.6f, 0.8f, 1f); // Soft Blue
-            
-            if (GUILayout.Button(new GUIContent(" Execute Request", EditorGUIUtility.IconContent("d_PlayButton").image), GUILayout.Height(30)))
+
+            if (GUILayout.Button(new GUIContent(" Execute Request", EditorGUIUtility.IconContent("d_PlayButton").image),
+                    GUILayout.Height(30)))
             {
                 if (!string.IsNullOrWhiteSpace(_currentPrompt))
                 {
@@ -89,9 +90,11 @@ namespace DenizYanar.ForgeAI.Tasks
                     GUI.FocusControl(null); // Deselect text area
                 }
             }
+
             GUI.backgroundColor = defaultColor; // Reset color
 
-            if (GUILayout.Button(new GUIContent(" Clear", EditorGUIUtility.IconContent("d_TreeEditor.Trash").image), GUILayout.Height(30), GUILayout.Width(80)))
+            if (GUILayout.Button(new GUIContent(" Clear", EditorGUIUtility.IconContent("d_TreeEditor.Trash").image),
+                    GUILayout.Height(30), GUILayout.Width(80)))
             {
                 _interactions.Clear();
             }
@@ -121,7 +124,7 @@ namespace DenizYanar.ForgeAI.Tasks
                 Status = "Thinking...",
                 ActiveTask = activeTask
             };
-            
+
             _interactions.Add(newInteraction);
             _shouldAutoScroll = true; // Trigger scroll to bottom
 
@@ -153,7 +156,7 @@ namespace DenizYanar.ForgeAI.Tasks
             {
                 DrawInteractionItem(_interactions[i]);
             }
-            
+
             // Auto-scroll logic
             if (_shouldAutoScroll && Event.current.type == EventType.Repaint)
             {
@@ -170,15 +173,38 @@ namespace DenizYanar.ForgeAI.Tasks
 
             // --- HEADER ROW (User + Status) ---
             GUILayout.BeginHorizontal();
-            
-            // 1. User Icon & Prompt
-            var userIcon = EditorGUIUtility.IconContent("d_FilterByLabel").image; // Little tag icon
-            GUILayout.Label(userIcon, GUILayout.Width(16), GUILayout.Height(16));
-            GUILayout.Label($"<b>User:</b> {interaction.UserPrompt}", new GUIStyle(EditorStyles.label) { richText = true, wordWrap = false });
-            
-            GUILayout.FlexibleSpace(); // Push status to the right
 
-            // 2. Color Coded Status
+            // 1. User Icon (Fixed Size)
+            var userIcon = EditorGUIUtility.IconContent("d_FilterByLabel").image;
+            GUILayout.Label(userIcon, GUILayout.Width(16), GUILayout.Height(16));
+
+            // 2. Clickable User Prompt (Flexible Width + Word Wrap)
+            // We create a custom style based on the default label but enforce wrapping
+            var promptStyle = new GUIStyle(EditorStyles.label)
+            {
+                richText = true,
+                wordWrap = true,
+                alignment = TextAnchor.MiddleLeft // Ensure text starts from the left
+            };
+
+            // We use a Button that looks like a Label.
+            // This handles the "Click" detection automatically.
+            // We remove the default button padding/background by using the label style.
+            GUIContent content = new GUIContent($"<b>User:</b> {interaction.UserPrompt}",
+                "Click to copy prompt to clipboard");
+
+            if (GUILayout.Button(content, promptStyle))
+            {
+                GUIUtility.systemCopyBuffer = interaction.UserPrompt;
+                ShowNotification(new GUIContent("Prompt Copied!")); // Shows a temporary toast message in the window
+            }
+
+            // 3. Status Section (Right Aligned)
+            // We allow the prompt to take up all available space, pushing the status to the right.
+            // If the prompt is long, it will wrap, and the status will stay on the right.
+            GUILayout.FlexibleSpace();
+
+            // Determine Status Color & Icon
             Color statusColor;
             string iconName;
 
@@ -190,7 +216,7 @@ namespace DenizYanar.ForgeAI.Tasks
             else if (interaction.IsCompleted)
             {
                 statusColor = new Color(0.4f, 1f, 0.4f); // Green
-                iconName = "d_winbtn_mac_max"; // Green dot
+                iconName = "d_winbtn_mac_max";
             }
             else
             {
@@ -198,25 +224,24 @@ namespace DenizYanar.ForgeAI.Tasks
                 iconName = "d_WaitSpin00";
             }
 
-            // Save original color
+            // Draw Status
             var originalContentColor = GUI.contentColor;
-            
-            // Draw Status Text
             GUI.contentColor = statusColor;
-            GUILayout.Label(new GUIContent($" {interaction.Status}", EditorGUIUtility.IconContent(iconName).image), EditorStyles.boldLabel);
-            
-            // Reset color
+
+            // Using a Layout Option for width ensures the status doesn't jump around too much
+            GUILayout.Label(new GUIContent($" {interaction.Status}", EditorGUIUtility.IconContent(iconName).image),
+                EditorStyles.boldLabel, GUILayout.Width(80)); // Fixed width for status helps alignment
+
             GUI.contentColor = originalContentColor;
 
             GUILayout.EndHorizontal();
-            
+
             // --- BODY ROW (Task UI) ---
             if (interaction.ActiveTask != null)
             {
                 GUILayout.Space(5);
-                // Indent the task UI slightly for visual hierarchy
                 GUILayout.BeginHorizontal();
-                GUILayout.Space(10); 
+                GUILayout.Space(10); // Indent
                 GUILayout.BeginVertical();
                 interaction.ActiveTask.DrawUI();
                 GUILayout.EndVertical();
