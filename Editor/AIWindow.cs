@@ -28,7 +28,8 @@ namespace DenizYanar.ForgeAI.Tasks
             _availableTaskTemplates = new List<AITask>
             {
                 new MessageTask(), 
-                new BatchMoveTask()
+                new BatchMoveTask(),
+                new GitOperationTask()
             };
 
             _taskDisplayNames = _availableTaskTemplates.Select(x => x.DisplayName).ToArray();
