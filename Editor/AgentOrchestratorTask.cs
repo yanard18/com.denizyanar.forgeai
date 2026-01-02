@@ -4,7 +4,8 @@ using System.Linq;
 using System.Text;
 using UnityEditor;
 using UnityEngine;
-using DenizYanar.ForgeAI.Editor; // Assuming AIClient is here
+using System.Threading.Tasks;
+using DenizYanar.ForgeAI.Editor; // For Task<string>
 
 namespace DenizYanar.ForgeAI.Tasks
 {
@@ -32,12 +33,14 @@ namespace DenizYanar.ForgeAI.Tasks
         
         // State tracking
         private int _currentStepIndex = 0;
-        private bool _isExecutingChain = false;
         private string _accumulatedContext = "";
+        
+        // Flags to manage UI state
+        private bool _isThinking = false;
+        private bool _isStepPrepared = false; 
 
         public override string GenerateFullPrompt(string userInstruction)
         {
-            // 1. Gather all available tools via Reflection (excluding this one to prevent recursion)
             var taskTypes = TypeCache.GetTypesDerivedFrom<AITask>();
             StringBuilder toolsBuilder = new StringBuilder();
             
@@ -49,7 +52,6 @@ namespace DenizYanar.ForgeAI.Tasks
                 toolsBuilder.AppendLine($"  Description: {instance.ToolDescription}");
             }
 
-            // 2. Build the Planner Prompt
             StringBuilder sb = new StringBuilder();
             sb.AppendLine("You are an AI Architect. Break the user's request into a sequential plan using the tools below.");
             sb.AppendLine("AVAILABLE TOOLS:");
@@ -62,22 +64,16 @@ namespace DenizYanar.ForgeAI.Tasks
             sb.AppendLine("2. Pass output of previous steps to the next implicitly.");
             sb.AppendLine("3. If the user wants to filter/undo commits, ALWAYS use GitOperationTask to get logs first.");
             sb.AppendLine("Example JSON Format:");
-            sb.AppendLine("{ \"steps\": [ { \"toolName\": \"GitOperationTask\", \"instruction\": \"Get last 50 commits\", \"reasoning\": \"Need logs first\" }, { \"toolName\": \"ChatTask\", \"instruction\": \"Analyze logs and identify Deniz's commits\", \"reasoning\": \"Filter data\" } ] }");
+            sb.AppendLine("{ \"steps\": [ { \"toolName\": \"GitOperationTask\", \"instruction\": \"Get last 50 commits\", \"reasoning\": \"Need logs first\" } ] }");
 
             return sb.ToString();
         }
 
-        
         public override void ProcessResponse(string response)
         {
             try
             {
-                // 1. Clean the response before parsing
                 string cleanedJson = ExtractJson(response);
-                
-                // Debug log to see exactly what we are trying to parse (crucial for debugging)
-                // Debug.Log($"[ForgeAI] Raw: {response.Length} chars | Cleaned: {cleanedJson}");
-
                 var planData = JsonUtility.FromJson<AgentPlan>(cleanedJson);
                 
                 if (planData != null && planData.steps != null)
@@ -85,60 +81,34 @@ namespace DenizYanar.ForgeAI.Tasks
                     _plan = planData.steps;
                     CreateSubTasksFromPlan();
                 }
-                else
-                {
-                    Debug.LogError($"[ForgeAI] Parsed JSON was empty or invalid.\nPayload: {cleanedJson}");
-                }
             }
             catch (Exception e)
             {
-                Debug.LogError($"[ForgeAI] JSON Parse Failed: {e.Message}\nOriginal Response: {response}");
+                Debug.LogError($"[ForgeAI] Plan Parse Failed: {e.Message}");
             }
         }
 
-        /// <summary>
-        /// Helper to strip Markdown (```json) and non-JSON text from LLM responses.
-        /// </summary>
         private string ExtractJson(string raw)
         {
             if (string.IsNullOrEmpty(raw)) return "";
-
-            // 1. Remove markdown code block delimiters
-            // Note: We replace "```json" first to catch the specific tag, then generic "```"
             string clean = raw.Replace("```json", "").Replace("```", "").Trim();
-
-            // 2. Find the start and end of the actual JSON object
             int firstBrace = clean.IndexOf('{');
             int lastBrace = clean.LastIndexOf('}');
-
-            // If we found valid braces, extract just that substring
             if (firstBrace >= 0 && lastBrace > firstBrace)
             {
                 clean = clean.Substring(firstBrace, lastBrace - firstBrace + 1);
             }
-
             return clean;
         }
-        
 
         private void CreateSubTasksFromPlan()
         {
             _subTasks.Clear();
             foreach (var step in _plan)
             {
-                // Find the type by name
-                var type = TypeCache.GetTypesDerivedFrom<AITask>()
-                    .FirstOrDefault(t => t.Name == step.toolName);
-
-                if (type != null)
-                {
-                    var task = (AITask)Activator.CreateInstance(type);
-                    _subTasks.Add(task);
-                }
-                else
-                {
-                    Debug.LogError($"Agent planned to use unknown tool: {step.toolName}");
-                }
+                var type = TypeCache.GetTypesDerivedFrom<AITask>().FirstOrDefault(t => t.Name == step.toolName);
+                if (type != null) _subTasks.Add((AITask)Activator.CreateInstance(type));
+                else Debug.LogError($"Unknown tool: {step.toolName}");
             }
         }
 
@@ -151,6 +121,7 @@ namespace DenizYanar.ForgeAI.Tasks
             }
 
             GUILayout.Label("📋 Execution Plan", EditorStyles.boldLabel);
+            
 
             for (int i = 0; i < _subTasks.Count; i++)
             {
@@ -159,16 +130,17 @@ namespace DenizYanar.ForgeAI.Tasks
                 bool isCurrent = i == _currentStepIndex;
                 bool isDone = i < _currentStepIndex;
 
-                GUI.backgroundColor = isCurrent ? new Color(0.7f, 1f, 0.7f) : (isDone ? Color.gray : Color.white);
+                // Visual Highlight for current step
+                GUI.backgroundColor = isCurrent ? new Color(0.8f, 1f, 0.8f) : (isDone ? new Color(0.9f, 0.9f, 0.9f) : Color.white);
                 GUILayout.BeginVertical(EditorStyles.helpBox);
                 GUI.backgroundColor = Color.white;
 
                 GUILayout.Label($"Step {i + 1}: {step.reasoning} ({step.toolName})", EditorStyles.boldLabel);
                 GUILayout.Label($"Instructions: {step.instruction}", EditorStyles.miniLabel);
 
+                // Only draw the sub-task UI if it's the active one or already done
                 if (isCurrent || isDone)
                 {
-                    // Draw the UI of the sub-task (e.g. the Git Table)
                     task.DrawUI();
                 }
 
@@ -176,64 +148,107 @@ namespace DenizYanar.ForgeAI.Tasks
             }
 
             GUILayout.Space(10);
+            
+            // --- MAIN CONTROL BUTTONS ---
+            DrawControlButtons();
+        }
 
-            if (!_isExecutingChain && _currentStepIndex < _subTasks.Count)
+        private void DrawControlButtons()
+        {
+            if (_currentStepIndex >= _subTasks.Count)
             {
-                if (GUILayout.Button("▶ Run Plan Step-by-Step"))
+                EditorGUILayout.HelpBox("All steps completed successfully!", MessageType.Info);
+                return;
+            }
+
+            var currentTask = _subTasks[_currentStepIndex];
+
+            // STATE 1: Thinking (API Call in progress)
+            if (_isThinking)
+            {
+                GUILayout.Label("Thinking... Please wait.", EditorStyles.boldLabel);
+                return;
+            }
+
+            // STATE 2: Task Prepared (User needs to Review & Execute inside the sub-task UI)
+            // We check !IsExecuted to verify the user hasn't clicked "Confirm" yet.
+            if (_isStepPrepared && !currentTask.IsExecuted)
+            {
+                EditorGUILayout.HelpBox("⚠ Action Required: Review the proposed plan above and click 'Confirm & Execute' to proceed.", MessageType.Warning);
+            }
+            // STATE 3: Task Executed (Ready to move to next step)
+            else if (currentTask.IsExecuted)
+            {
+                GUI.backgroundColor = new Color(0.6f, 1f, 0.6f);
+                if (GUILayout.Button("▶ Proceed to Next Step", GUILayout.Height(30)))
                 {
-                    ExecuteNextStep();
+                    AdvanceToNextStep();
+                }
+                GUI.backgroundColor = Color.white;
+            }
+            // STATE 4: Not Started (Need to generate prompt)
+            else
+            {
+                if (GUILayout.Button($"▶ Initialize Step {_currentStepIndex + 1}", GUILayout.Height(30)))
+                {
+                    PrepareCurrentStep();
                 }
             }
         }
 
-        private async void ExecuteNextStep()
+        private async void PrepareCurrentStep()
         {
-            if (_currentStepIndex >= _subTasks.Count) return;
-
-            _isExecutingChain = true;
+            _isThinking = true;
             var currentTask = _subTasks[_currentStepIndex];
             var currentStepInfo = _plan[_currentStepIndex];
 
+            // 1. Inject Context from previous steps
             if (!string.IsNullOrEmpty(_accumulatedContext))
             {
                 currentTask.ContextFromPreviousSteps = _accumulatedContext;
             }
-           
 
-            // 2. PREPARE THE TASK (API CALL)
-            // Most tasks need to hit the API to convert instruction -> operations
-            // We simulate what AIWindow does here
+            // 2. Generate Prompt & Call API
             string prompt = currentTask.GenerateFullPrompt(currentStepInfo.instruction);
             
-            Debug.Log($"[Agent] Step {_currentStepIndex} Prompt Preview:\n{prompt.Substring(0, Mathf.Min(prompt.Length, 500))}...");
-            
-            // Assuming we have access to the API key from Preferences
+            // Assuming Editor Code access:
             string apiKey = AIProjectPreferences.APIKey; 
             string response = await AIClient.SendRequestAsync(prompt, apiKey);
             
             currentTask.ProcessResponse(response);
 
-            // 3. AUTO-EXECUTE (Optional)
-            // If the task is a simple Git Log, we might want to auto-run it.
-            // If it's a destructive Git Revert, we might want to wait for user confirmation.
-            // For now, let's auto-execute to get the output for the next step.
-            currentTask.Execute();
-
-            // 4. CAPTURE RESULT
-            string result = currentTask.GetExecutionResult();
-            _accumulatedContext += $"\n--- Output of Step {_currentStepIndex+1} ({currentStepInfo.toolName}) ---\n{result}\n";
-
-            _currentStepIndex++;
-            _isExecutingChain = false;
+            // 3. Update State - WE DO NOT AUTO-EXECUTE HERE
+            _isThinking = false;
+            _isStepPrepared = true; 
             
-            // Trigger repaint of window if possible
-            // In a real scenario, you'd use an event or callback to repaint the EditorWindow
+            // Now the DrawUI loop will show the Sub-Task's "Proposed Plan"
+        }
+
+        private void AdvanceToNextStep()
+        {
+            var currentTask = _subTasks[_currentStepIndex];
+            var currentStepInfo = _plan[_currentStepIndex];
+
+            // 1. Capture Result (Now that the user has definitely executed it)
+            string result = currentTask.GetExecutionResult();
+            _accumulatedContext += $"\n--- Output of Step {_currentStepIndex + 1} ({currentStepInfo.toolName}) ---\n{result}\n";
+
+            // 2. Advance Index
+            _currentStepIndex++;
+            _isStepPrepared = false; // Reset for next task
+
+            // 3. Optional: Auto-start the next step's preparation?
+            // Uncomment the line below if you want to immediately start thinking about the next step
+            // if (_currentStepIndex < _subTasks.Count) PrepareCurrentStep();
         }
 
         public override void Execute()
         {
-            // The "Execute" button in the main window triggers the chain
-            ExecuteNextStep();
+            // Initial Trigger
+            if (_currentStepIndex == 0 && !_isStepPrepared)
+            {
+                PrepareCurrentStep();
+            }
         }
     }
 }

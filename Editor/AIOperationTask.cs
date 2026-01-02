@@ -21,35 +21,57 @@ namespace DenizYanar.ForgeAI.Tasks
         }
 
         protected List<TOperation> _proposedOperations = new();
-        protected string _rawJsonForDebug;
+        
+        // MOVED HERE: Common state tracking for all operation tasks
+        protected bool _isUndone = false; 
 
-        // --- Shared UI State ---
+        // --- JSON Parsing Logic ---
 
         public override void ProcessResponse(string rawResponse)
         {
-            _rawJsonForDebug = rawResponse;
-            string cleanJson = rawResponse.Replace("```json", "").Replace("```", "").Trim();
+            string cleanJson = ExtractJson(rawResponse);
 
             try
             {
-                // Deserialize into the generic wrapper
                 var wrapper = JsonUtility.FromJson<AIResponseWrapper>(cleanJson);
                 if (wrapper != null && wrapper.operations != null)
                 {
                     _proposedOperations = wrapper.operations;
-                    PostProcessOperations(); // Hook for filtering (e.g., Rename checks)
+                    PostProcessOperations(); // Hook for filtering
+                    
+                    // Mark as "Received Response" but not yet "Executed"
+                    StatusMessage = $"Plan generated. {_proposedOperations.Count} operations proposed.";
                 }
             }
             catch (System.Exception e)
             {
-                Debug.LogError($"[{DisplayName}] JSON Parse Error: {e.Message}");
+                Debug.LogError($"[{DisplayName}] JSON Parse Error: {e.Message}\nRaw: {cleanJson}");
+                StatusMessage = "Failed to parse AI response.";
             }
         }
 
         /// <summary>
-        /// Optional hook to filter or modify operations after parsing (e.g., removing unchanged filenames).
+        /// Helper to robustly strip Markdown and extract the JSON object.
+        /// </summary>
+        private string ExtractJson(string raw)
+        {
+            if (string.IsNullOrEmpty(raw)) return "";
+            string clean = raw.Replace("```json", "").Replace("```", "").Trim();
+            int firstBrace = clean.IndexOf('{');
+            int lastBrace = clean.LastIndexOf('}');
+            if (firstBrace >= 0 && lastBrace > firstBrace)
+            {
+                clean = clean.Substring(firstBrace, lastBrace - firstBrace + 1);
+            }
+            return clean;
+        }
+
+        /// <summary>
+        /// Optional hook to filter or modify operations after parsing.
         /// </summary>
         protected virtual void PostProcessOperations() { }
+
+        // --- Shared UI Logic ---
 
         public override void DrawUI()
         {
@@ -61,23 +83,20 @@ namespace DenizYanar.ForgeAI.Tasks
             }
 
             // State 2: Proposed Plan (Waiting for Confirmation)
-            if (!IsExecuted && !IsUndone)
+            if (!IsExecuted && !_isUndone)
             {
                 GUILayout.Label($"Proposed Plan ({_proposedOperations.Count} items)", EditorStyles.boldLabel);
-                
-                // Draw the list of operations
                 DrawOperationList();
-
                 GUILayout.Space(5);
                 DrawConfirmButton();
             }
             // State 3: Executed (Success/Fail)
-            else if (IsExecuted && !IsUndone)
+            else if (IsExecuted && !_isUndone)
             {
                 DrawExecutionResultUI();
             }
             // State 4: Undone
-            else if (IsUndone)
+            else if (_isUndone)
             {
                 DrawUndoneUI();
             }
@@ -85,67 +104,89 @@ namespace DenizYanar.ForgeAI.Tasks
 
         protected virtual void DrawEmptyOrErrorState()
         {
-            EditorGUILayout.HelpBox("No valid operations found.", MessageType.Warning);
+            // Only show warning if we actually tried to parse something
+            if (!string.IsNullOrEmpty(StatusMessage))
+                EditorGUILayout.HelpBox(StatusMessage, MessageType.Warning);
         }
 
         protected virtual void DrawOperationList()
         {
-            // Scroll view handling could go here if lists get long
+            // Optional: Add ScrollView if list > 10 items
             for (int i = 0; i < _proposedOperations.Count; i++)
             {
                 DrawOperationRow(_proposedOperations[i], i);
             }
         }
 
-        // Abstract: How does a specific task draw one row? (e.g., "A -> B" vs "Git Command")
         protected abstract void DrawOperationRow(TOperation op, int index);
 
         protected virtual void DrawConfirmButton()
         {
             var defaultColor = GUI.backgroundColor;
             GUI.backgroundColor = new Color(0.6f, 0.8f, 1f);
+            
             if (GUILayout.Button(new GUIContent(" Confirm & Execute", EditorGUIUtility.IconContent("d_PlayButton").image), GUILayout.Height(28)))
             {
                 Execute();
+                // Ensure Undone flag is reset when we execute
+                _isUndone = false; 
             }
+            
             GUI.backgroundColor = defaultColor;
         }
 
         protected virtual void DrawExecutionResultUI()
         {
-            GUILayout.BeginHorizontal(EditorStyles.helpBox);
+            GUILayout.BeginVertical(EditorStyles.helpBox);
+            
+            // Draw Status Message (Success/Error)
+            GUILayout.BeginHorizontal();
             GUILayout.Label(EditorGUIUtility.IconContent("d_winbtn_mac_max").image, GUILayout.Width(16), GUILayout.Height(16));
+            GUILayout.Label(StatusMessage, new GUIStyle(EditorStyles.label) { wordWrap = true });
+            GUILayout.EndHorizontal();
 
-            GUILayout.BeginVertical();
-            GUILayout.Label(ExecutionResult, new GUIStyle(EditorStyles.label) { wordWrap = true });
-            GUILayout.EndVertical();
-
+            // Draw Undo Button
             if (CanUndo)
             {
                 GUILayout.Space(5);
                 var defaultColor = GUI.backgroundColor;
                 GUI.backgroundColor = new Color(1f, 0.6f, 0.6f);
-                if (GUILayout.Button(new GUIContent(" Undo", EditorGUIUtility.IconContent("d_RotateTool").image), EditorStyles.miniButton, GUILayout.Width(65)))
+                if (GUILayout.Button(new GUIContent(" Undo Operations", EditorGUIUtility.IconContent("d_RotateTool").image), GUILayout.Height(24)))
                 {
                     Undo();
+                    _isUndone = true; // Set flag for UI
                 }
                 GUI.backgroundColor = defaultColor;
             }
-            GUILayout.EndHorizontal();
+            
+            // Draw Data Log (Optional - show what was actually done)
+            if (!string.IsNullOrEmpty(_executionData))
+            {
+                GUILayout.Space(5);
+                EditorGUILayout.LabelField("Log:", EditorStyles.miniLabel);
+                EditorGUILayout.TextArea(_executionData, EditorStyles.textArea);
+            }
+            
+            GUILayout.EndVertical();
         }
 
         protected virtual void DrawUndoneUI()
         {
-            GUILayout.BeginHorizontal(EditorStyles.helpBox);
+            GUILayout.BeginVertical(EditorStyles.helpBox);
+            GUILayout.BeginHorizontal();
             GUILayout.Label(EditorGUIUtility.IconContent("d_console.warnicon.sml").image, GUILayout.Width(16), GUILayout.Height(16));
-            GUILayout.Label("Operations Reverted.", new GUIStyle(EditorStyles.label) { wordWrap = true });
+            GUILayout.Label(StatusMessage, new GUIStyle(EditorStyles.label) { wordWrap = true }); // e.g., "Undid 5 moves"
+            GUILayout.EndHorizontal();
             
             GUILayout.Space(5);
-            if (GUILayout.Button(new GUIContent(" Redo", EditorGUIUtility.IconContent("d_Refresh").image), EditorStyles.miniButton, GUILayout.Width(65)))
+            
+            // Allow Redo
+            if (GUILayout.Button(new GUIContent(" Redo (Execute Again)", EditorGUIUtility.IconContent("d_Refresh").image), GUILayout.Height(24)))
             {
                 Execute();
+                _isUndone = false;
             }
-            GUILayout.EndHorizontal();
+            GUILayout.EndVertical();
         }
 
         // --- Helper Methods ---

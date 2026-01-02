@@ -7,66 +7,55 @@ namespace DenizYanar.ForgeAI.Tasks
     public class MessageTask : AITask
     {
         public override string DisplayName => "Chat / Analysis";
-        
-        // KEY CHANGE 1: Describe this tool so the Orchestrator knows when to use it.
-        public override string ToolDescription => "Analyzes text, filters logs, explains code, or answers general questions.";
+        public override string ToolDescription => "Analyzes text, filters logs, explains code.";
 
-        private string _responseText;
         private Vector2 _scrollPosition;
 
         public override string GenerateFullPrompt(string userInstruction)
         {
             StringBuilder sb = new StringBuilder();
+            sb.AppendLine("You are a helpful Unity Expert.");
 
-            // Set the Persona
-            sb.AppendLine("You are a helpful Unity and Git Expert.");
-
-            if (!string.IsNullOrEmpty(ContextFromPreviousSteps))
-            {
-                sb.AppendLine("\n=== DATA TO ANALYZE ===");
-                sb.AppendLine(ContextFromPreviousSteps);
-                sb.AppendLine("=======================\n");
-                
-                sb.AppendLine("Based on the data above, please address the following request:");
-            }
+            // ONE LINE to inject logs, code, or file lists
+            AppendContextIfAvailable(sb);
 
             sb.AppendLine($"User Instruction: \"{userInstruction}\"");
-
             return sb.ToString();
         }
 
-        public override void ProcessResponse(string rawResponse)
+        public override void ProcessResponse(string rawResponse) 
         {
-            _responseText = rawResponse.Trim();
-            IsExecuted = true; 
-            ExecutionResult = _responseText; // Store result so it can be passed to future steps if needed
+            // Save to the standard pipeline storage
+            _executionData = rawResponse.Trim();
+            StatusMessage = "Response Received";
+            IsExecuted = true;
         }
 
         public override void DrawUI()
         {
-            if (string.IsNullOrEmpty(_responseText)) return;
+            // BUG FIX: Read from the base class property _executionData
+            if (string.IsNullOrEmpty(_executionData)) return;
 
             GUILayout.BeginVertical(EditorStyles.helpBox);
             GUILayout.Label("Analysis Result:", EditorStyles.boldLabel);
 
-            // Scroll view for long analysis results
             _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition, GUILayout.Height(200));
-            
-            // Rich text support allows bolding/coloring if the AI uses Markdown
+        
             var style = new GUIStyle(EditorStyles.textArea) { richText = true, wordWrap = true };
-            EditorGUILayout.TextArea(_responseText, style, GUILayout.ExpandHeight(true));
-            
+        
+            // BUG FIX: Display the actual data
+            EditorGUILayout.TextArea(_executionData, style, GUILayout.ExpandHeight(true));
+        
             EditorGUILayout.EndScrollView();
             GUILayout.EndVertical();
         }
 
         public override void Execute()
         {
-            // Optional: Copy result to clipboard
-            if (!string.IsNullOrEmpty(_responseText))
+            if (!string.IsNullOrEmpty(_executionData))
             {
-                GUIUtility.systemCopyBuffer = _responseText;
-                Debug.Log("Analysis copied to clipboard.");
+                GUIUtility.systemCopyBuffer = _executionData;
+                Debug.Log("Copied to clipboard.");
             }
         }
     }

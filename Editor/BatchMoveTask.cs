@@ -17,7 +17,14 @@ namespace DenizYanar.ForgeAI.Tasks
     public class BatchMoveTask : AIOperationTask<FileMoveOperation>
     {
         public override string DisplayName => "Batch Move";
+        
+        // 1. Describe the tool for the Agent
+        public override string ToolDescription => "Organizes project assets by moving them to new folders based on context or file type.";
+        
         public override bool CanUndo => true;
+
+        // 2. Local state tracking
+        private bool _isUndone = false;
 
         private struct CompletedMove
         {
@@ -31,13 +38,20 @@ namespace DenizYanar.ForgeAI.Tasks
         public override string GenerateFullPrompt(string userInstruction)
         {
             var selectedPaths = GetSelectedAssetPaths();
+            // If no files selected, we might rely on the instruction, but usually this needs selection.
             if (selectedPaths.Count == 0) return userInstruction;
 
             StringBuilder sb = new StringBuilder();
             sb.AppendLine("You are a Unity Asset Database expert. Output ONLY valid JSON.");
             sb.AppendLine("Reorganize these files based on the instruction:");
             foreach (var p in selectedPaths) sb.AppendLine(p);
+            
             sb.AppendLine($"\nUSER INSTRUCTION: \"{userInstruction}\"\n");
+            
+            // Note: No need to explicitly check ContextFromPreviousSteps here usually, 
+            // as this task is heavily reliant on current Selection, 
+            // but you could add it if you wanted the Agent to pass file lists dynamically.
+            
             sb.AppendLine("JSON Format: { \"operations\": [ { \"sourcePath\": \"Assets/A.mat\", \"targetPath\": \"Assets/Folder/A.mat\" } ] }");
             sb.AppendLine("Ensure target paths include filename/extension.");
             return sb.ToString();
@@ -51,10 +65,14 @@ namespace DenizYanar.ForgeAI.Tasks
         public override void Execute()
         {
             if (IsExecuted) return;
+            
             int successCount = 0;
             List<string> errors = new List<string>();
             _executionHistory.Clear();
             _createdFolders.Clear();
+            
+            // 3. Build Data Log
+            StringBuilder executionLog = new StringBuilder();
 
             foreach (var op in _proposedOperations)
             {
@@ -64,32 +82,56 @@ namespace DenizYanar.ForgeAI.Tasks
                 if (string.IsNullOrEmpty(err))
                 {
                     successCount++;
-                    _executionHistory.Push(new CompletedMove { OriginalSource = op.sourcePath, CurrentLocation = op.targetPath });
+                    executionLog.AppendLine($"[MOVED] {op.sourcePath} -> {op.targetPath}");
+                    
+                    _executionHistory.Push(new CompletedMove 
+                    { 
+                        OriginalSource = op.sourcePath, 
+                        CurrentLocation = op.targetPath 
+                    });
                 }
-                else errors.Add(err);
+                else 
+                {
+                    errors.Add(err);
+                    executionLog.AppendLine($"[ERROR] Failed to move {op.sourcePath}: {err}");
+                }
             }
 
-            ExecutionResult = errors.Count > 0 
-                ? $"Moved {successCount}/{_proposedOperations.Count} files. Errors: {string.Join(", ", errors)}"
+            // 4. Update Base Class Properties
+            _executionData = executionLog.ToString();
+            
+            StatusMessage = errors.Count > 0 
+                ? $"Moved {successCount}/{_proposedOperations.Count} files. Errors: {errors.Count}"
                 : $"Success! Moved all {successCount} files.";
 
             IsExecuted = true;
-            IsUndone = false;
+            _isUndone = false;
             AssetDatabase.Refresh();
         }
 
         public override void Undo()
         {
-            if (!IsExecuted || IsUndone) return;
+            if (!IsExecuted || _isUndone) return;
+            
             int undoCount = 0;
+            StringBuilder undoLog = new StringBuilder();
 
             while (_executionHistory.Count > 0)
             {
                 var move = _executionHistory.Pop();
                 string originalDir = System.IO.Path.GetDirectoryName(move.OriginalSource);
-                if (!System.IO.Directory.Exists(originalDir)) System.IO.Directory.CreateDirectory(originalDir);
+                
+                // Ensure original directory exists before moving back
+                if (!System.IO.Directory.Exists(originalDir)) 
+                {
+                    System.IO.Directory.CreateDirectory(originalDir);
+                }
 
-                if (string.IsNullOrEmpty(AssetDatabase.MoveAsset(move.CurrentLocation, move.OriginalSource))) undoCount++;
+                if (string.IsNullOrEmpty(AssetDatabase.MoveAsset(move.CurrentLocation, move.OriginalSource)))
+                {
+                    undoCount++;
+                    undoLog.AppendLine($"[UNDO] Reverted {move.CurrentLocation} -> {move.OriginalSource}");
+                }
             }
 
             // Cleanup empty folders we created
@@ -98,12 +140,17 @@ namespace DenizYanar.ForgeAI.Tasks
                 if (System.IO.Directory.Exists(folder) && System.IO.Directory.GetFileSystemEntries(folder).Length == 0)
                 {
                     AssetDatabase.DeleteAsset(folder);
+                    undoLog.AppendLine($"[CLEANUP] Removed empty folder: {folder}");
                 }
             }
 
-            IsUndone = true;
+            _isUndone = true;
             IsExecuted = false;
-            ExecutionResult = $"Undid {undoCount} moves.";
+            
+            // 5. Update Log
+            _executionData += "\n\n--- UNDO OPERATIONS ---\n" + undoLog.ToString();
+            StatusMessage = $"Undid {undoCount} moves.";
+            
             AssetDatabase.Refresh();
         }
 
