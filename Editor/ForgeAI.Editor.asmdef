@@ -1,0 +1,16 @@
+{
+    "name": "ForgeAI.Editor",
+    "rootNamespace": "",
+    "references": [
+        "GUID:67a3464aa512b4e4489b93953cae481e"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -1,0 +1,11 @@
+{
+  "name": "com.denizyanar.forgeai",
+  "version": "0.1.0",
+  "displayName": "ForgeAI Unity AI Assistant",
+  "description": "An AI-powered agent to help with editor tasks in Unity",
+  "unity": "6000.3",
+  "author": {
+    "name": "Deniz Yanar",
+    "email": "yanard18@email.com"
+  }
+}
