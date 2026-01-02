@@ -8,7 +8,7 @@ namespace DenizYanar.ForgeAI.Tasks
 {
     public class BatchMoveTask : AITask
     {
-        public override string DisplayName => "Batch Move / Organize Files";
+        public override string DisplayName => "Batch Move";
         public override bool CanUndo => true;
 
         [System.Serializable]
@@ -31,9 +31,11 @@ namespace DenizYanar.ForgeAI.Tasks
         }
 
         private List<FileMoveOperation> _proposedOperations = new();
+
         private Stack<CompletedMove> _executionHistory = new();
+
         // Track folders created specifically by this task
-        private HashSet<string> _createdFolders = new(); 
+        private HashSet<string> _createdFolders = new();
         private string _rawJsonForDebug;
 
         public override string GenerateFullPrompt(string userInstruction)
@@ -59,7 +61,8 @@ namespace DenizYanar.ForgeAI.Tasks
             sb.AppendLine($"USER INSTRUCTION: \"{userInstruction}\"\n");
             sb.AppendLine("--- RESPONSE FORMAT ---");
             sb.AppendLine("Return a JSON object with a single key 'operations' containing an array.");
-            sb.AppendLine("Example: { \"operations\": [ { \"sourcePath\": \"Assets/A.mat\", \"targetPath\": \"Assets/Materials/A.mat\" } ] }");
+            sb.AppendLine(
+                "Example: { \"operations\": [ { \"sourcePath\": \"Assets/A.mat\", \"targetPath\": \"Assets/Materials/A.mat\" } ] }");
             sb.AppendLine("Ensure target paths include the filename and extension.");
 
             return sb.ToString();
@@ -87,44 +90,99 @@ namespace DenizYanar.ForgeAI.Tasks
 
         public override void DrawUI()
         {
+            // Case 1: Error or No Data
             if (_proposedOperations == null || _proposedOperations.Count == 0)
             {
-                EditorGUILayout.HelpBox("No valid move operations found in AI response.", MessageType.Warning);
-                if (!string.IsNullOrEmpty(_rawJsonForDebug))
-                    EditorGUILayout.LabelField("Raw:", _rawJsonForDebug);
+                EditorGUILayout.HelpBox("No valid move operations found.", MessageType.Warning);
                 return;
             }
 
+            // Case 2: Proposed Plan (Before Execution)
             if (!IsExecuted && !IsUndone)
             {
-                EditorGUILayout.LabelField($"Proposed Moves ({_proposedOperations.Count}):", EditorStyles.boldLabel);
+                GUILayout.Label($"Proposed Plan ({_proposedOperations.Count} files)", EditorStyles.boldLabel);
 
                 foreach (var op in _proposedOperations)
                 {
-                    EditorGUILayout.BeginHorizontal(EditorStyles.helpBox);
-                    GUILayout.Label(System.IO.Path.GetFileName(op.sourcePath), GUILayout.Width(150));
-                    GUILayout.Label("->");
-                    GUILayout.Label(op.targetPath);
-                    EditorGUILayout.EndHorizontal();
+                    GUILayout.BeginHorizontal(EditorStyles.helpBox);
+
+                    // FIX 1: Use the actual asset icon instead of a generic folder icon
+                    Texture icon = AssetDatabase.GetCachedIcon(op.sourcePath);
+                    if (icon == null) icon = EditorGUIUtility.IconContent("d_GameObject Icon").image; // Fallback
+
+                    GUILayout.Label(icon, GUILayout.Width(16), GUILayout.Height(16));
+                    GUILayout.Label(System.IO.Path.GetFileName(op.sourcePath), GUILayout.Width(140));
+                    GUILayout.Label(EditorGUIUtility.IconContent("d_forward").image, GUILayout.Width(16),
+                        GUILayout.Height(16));
+                    GUILayout.Label(op.targetPath, EditorStyles.miniLabel);
+                    GUILayout.EndHorizontal();
                 }
 
                 GUILayout.Space(5);
-                if (GUILayout.Button("Confirm & Execute Move")) Execute();
-            }
-            else if (IsExecuted && !IsUndone)
-            {
-                EditorGUILayout.HelpBox(ExecutionResult, MessageType.Info);
-                GUILayout.Space(5);
-                
+
                 var defaultColor = GUI.backgroundColor;
-                GUI.backgroundColor = new Color(1f, 0.7f, 0.7f);
-                if (GUILayout.Button("Undo Changes")) Undo();
+                GUI.backgroundColor = new Color(0.6f, 0.8f, 1f);
+                if (GUILayout.Button(
+                        new GUIContent(" Confirm & Execute", EditorGUIUtility.IconContent("d_PlayButton").image),
+                        GUILayout.Height(28)))
+                {
+                    Execute();
+                }
+
                 GUI.backgroundColor = defaultColor;
             }
+
+            // Case 3: Execution Success (Fixed Layout)
+            else if (IsExecuted && !IsUndone)
+            {
+                GUILayout.BeginHorizontal(EditorStyles.helpBox);
+
+                // Icon
+                var successIcon = EditorGUIUtility.IconContent("d_winbtn_mac_max").image;
+                GUILayout.Label(successIcon, GUILayout.Width(16), GUILayout.Height(16));
+
+                // FIX 2: Text uses Word Wrapping to prevent horizontal scroll
+                // We wrap it in a Vertical group to allow the height to expand naturally
+                GUILayout.BeginVertical();
+                GUILayout.Label(ExecutionResult, new GUIStyle(EditorStyles.label) { wordWrap = true });
+                GUILayout.EndVertical();
+
+                // Undo Button (Right aligned, fixed width)
+                // We remove FlexibleSpace here because the Label above will take available width
+                // But we add a small space to ensure separation
+                GUILayout.Space(5);
+
+                var defaultColor = GUI.backgroundColor;
+                GUI.backgroundColor = new Color(1f, 0.6f, 0.6f);
+
+                if (GUILayout.Button(new GUIContent(" Undo", EditorGUIUtility.IconContent("d_RotateTool").image),
+                        EditorStyles.miniButton, GUILayout.Width(65)))
+                {
+                    Undo();
+                }
+                GUI.backgroundColor = defaultColor;
+                GUILayout.EndHorizontal();
+            }
+
+            // Case 4: Undone State
             else if (IsUndone)
             {
-                EditorGUILayout.HelpBox($"Reverted: {ExecutionResult}", MessageType.Warning);
-                if (GUILayout.Button("Redo (Execute Again)")) Execute();
+                GUILayout.BeginHorizontal(EditorStyles.helpBox);
+
+                GUILayout.Label(EditorGUIUtility.IconContent("d_console.warnicon.sml").image, GUILayout.Width(16),
+                    GUILayout.Height(16));
+
+                // Also word wrap the Undo message just in case
+                GUILayout.BeginVertical();
+                GUILayout.Label("Operations Reverted.", new GUIStyle(EditorStyles.label) { wordWrap = true });
+                GUILayout.EndVertical();
+                GUILayout.Space(5);
+                if (GUILayout.Button(new GUIContent(" Redo", EditorGUIUtility.IconContent("d_Refresh").image),
+                        EditorStyles.miniButton, GUILayout.Width(65)))
+                {
+                    Execute();
+                }
+                GUILayout.EndHorizontal();
             }
         }
 
@@ -160,7 +218,8 @@ namespace DenizYanar.ForgeAI.Tasks
             }
 
             if (errors.Count > 0)
-                ExecutionResult = $"Moved {successCount}/{_proposedOperations.Count} files. Errors: {string.Join(", ", errors)}";
+                ExecutionResult =
+                    $"Moved {successCount}/{_proposedOperations.Count} files. Errors: {string.Join(", ", errors)}";
             else
                 ExecutionResult = $"Success! Moved all {successCount} files.";
 
@@ -184,7 +243,7 @@ namespace DenizYanar.ForgeAI.Tasks
                 string originalDir = System.IO.Path.GetDirectoryName(move.OriginalSource);
                 if (!string.IsNullOrEmpty(originalDir) && !System.IO.Directory.Exists(originalDir))
                 {
-                     System.IO.Directory.CreateDirectory(originalDir);
+                    System.IO.Directory.CreateDirectory(originalDir);
                 }
 
                 string err = AssetDatabase.MoveAsset(move.CurrentLocation, move.OriginalSource);

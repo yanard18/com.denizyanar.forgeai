@@ -5,7 +5,7 @@ namespace DenizYanar.ForgeAI.Tasks
 {
     public class MessageTask : AITask
     {
-        public override string DisplayName => "Chat / Q&A";
+        public override string DisplayName => "Chat";
 
         // We store the raw response here to display it
         private string _responseText;

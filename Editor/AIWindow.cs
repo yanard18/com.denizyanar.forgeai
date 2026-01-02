@@ -10,6 +10,7 @@ namespace DenizYanar.ForgeAI.Tasks
     {
         private string _currentPrompt = "";
         private Vector2 _scrollPosition;
+        private bool _shouldAutoScroll = false;
 
         // Task Selection
         private int _selectedTaskIndex = 0;
@@ -26,7 +27,7 @@ namespace DenizYanar.ForgeAI.Tasks
             // Initialize available tasks
             _availableTaskTemplates = new List<AITask>
             {
-                new MessageTask(), // Assuming you have a basic text chat task
+                new MessageTask(), 
                 new BatchMoveTask()
             };
 
@@ -35,72 +36,93 @@ namespace DenizYanar.ForgeAI.Tasks
 
         private void OnGUI()
         {
-            GUILayout.Label("AI Assistant", EditorStyles.boldLabel);
+            // Simple Header with Padding
+            GUILayout.BeginVertical(EditorStyles.helpBox);
+            GUILayout.Label("Forge AI Assistant", EditorStyles.boldLabel);
+            GUILayout.EndVertical();
+            
+            GUILayout.Space(5);
+            
             DrawInputArea();
+            
+            GUILayout.Space(5);
+            
             DrawTaskHistory();
         }
 
         private void DrawInputArea()
         {
             GUILayout.BeginVertical(EditorStyles.helpBox);
+            GUILayout.Space(5);
 
-            // Task Selector
+            // Row 1: Task Selection
             GUILayout.BeginHorizontal();
-            GUILayout.Label("Task Type:", GUILayout.Width(80));
+            GUILayout.Label(EditorGUIUtility.IconContent("d_SettingsIcon"), GUILayout.Width(20), GUILayout.Height(20));
+            GUILayout.Label("Task Mode:", GUILayout.Width(70));
             _selectedTaskIndex = EditorGUILayout.Popup(_selectedTaskIndex, _taskDisplayNames);
             GUILayout.EndHorizontal();
 
+            GUILayout.Space(5);
+
+            // Row 2: Prompt Area
             GUILayout.Label("Instruction:");
+            GUI.SetNextControlName("PromptInput");
             _currentPrompt = EditorGUILayout.TextArea(_currentPrompt, GUILayout.Height(60));
 
+            GUILayout.Space(5);
+
+            // Row 3: Buttons
             GUILayout.BeginHorizontal();
 
-            if (GUILayout.Button("Execute Request", GUILayout.Height(30)))
+            // Highlight the Execute button
+            var defaultColor = GUI.backgroundColor;
+            GUI.backgroundColor = new Color(0.6f, 0.8f, 1f); // Soft Blue
+            
+            if (GUILayout.Button(new GUIContent(" Execute Request", EditorGUIUtility.IconContent("d_PlayButton").image), GUILayout.Height(30)))
             {
                 if (!string.IsNullOrWhiteSpace(_currentPrompt))
                 {
                     PerformTask(_currentPrompt);
                     _currentPrompt = "";
-                    GUI.FocusControl(null);
+                    GUI.FocusControl(null); // Deselect text area
                 }
             }
+            GUI.backgroundColor = defaultColor; // Reset color
 
-            if (GUILayout.Button("Clear History", GUILayout.Height(30), GUILayout.Width(100)))
+            if (GUILayout.Button(new GUIContent(" Clear", EditorGUIUtility.IconContent("d_TreeEditor.Trash").image), GUILayout.Height(30), GUILayout.Width(80)))
             {
                 _interactions.Clear();
             }
 
             GUILayout.EndHorizontal();
+            GUILayout.Space(5);
             GUILayout.EndVertical();
         }
 
         private async void PerformTask(string userPrompt)
         {
-            var storedKey = AIProjectPreferences.APIKey; // Ensure you have this class
+            var storedKey = AIProjectPreferences.APIKey;
             if (string.IsNullOrEmpty(storedKey))
             {
                 Debug.LogError("No API Key found.");
                 return;
             }
 
-            // 1. Create a specific instance of the selected task
-            // We use Activator to create a fresh copy of the selected template type
             var template = _availableTaskTemplates[_selectedTaskIndex];
             var activeTask = (AITask)System.Activator.CreateInstance(template.GetType());
 
-            // 2. Ask the TASK to build the prompt (injecting context/json rules)
             string fullPromptToSend = activeTask.GenerateFullPrompt(userPrompt);
 
-            // 3. Create UI Interaction container
             var newInteraction = new AIInteraction
             {
                 UserPrompt = userPrompt,
                 Status = "Thinking...",
-                ActiveTask = activeTask // Store the logic inside the history item
+                ActiveTask = activeTask
             };
+            
             _interactions.Add(newInteraction);
+            _shouldAutoScroll = true; // Trigger scroll to bottom
 
-            // 4. Send Request
             var rawResponse = await AIClient.SendRequestAsync(fullPromptToSend, storedKey);
 
             if (string.IsNullOrEmpty(rawResponse))
@@ -110,9 +132,7 @@ namespace DenizYanar.ForgeAI.Tasks
             }
             else
             {
-                // 5. Pass response back to the Task to parse
                 activeTask.ProcessResponse(rawResponse);
-
                 newInteraction.Status = "Ready";
                 newInteraction.IsCompleted = true;
             }
@@ -122,50 +142,94 @@ namespace DenizYanar.ForgeAI.Tasks
 
         private void DrawTaskHistory()
         {
-            GUILayout.Label("History:", EditorStyles.boldLabel);
+            GUILayout.Label("Interaction History:", EditorStyles.boldLabel);
 
             using var scrollView = new EditorGUILayout.ScrollViewScope(_scrollPosition);
             _scrollPosition = scrollView.scrollPosition;
 
-            // Iterate backwards to show newest at bottom (or top depending on pref)
-            // Here we iterate backwards to render recent at bottom if using Flex layout, 
-            // but standard Unity GUI draws top-down. 
-            // Let's draw normally (Oldest -> Newest) or reverse. 
-            // Usually chat logs are Top=Old, Bottom=New.
             for (int i = 0; i < _interactions.Count; i++)
             {
                 DrawInteractionItem(_interactions[i]);
+            }
+            
+            // Auto-scroll logic
+            if (_shouldAutoScroll && Event.current.type == EventType.Repaint)
+            {
+                _scrollPosition.y = float.MaxValue;
+                _shouldAutoScroll = false;
+                Repaint();
             }
         }
 
         private void DrawInteractionItem(AIInteraction interaction)
         {
             GUILayout.BeginVertical(EditorStyles.helpBox);
+            GUILayout.Space(4);
 
-            // Header
+            // --- HEADER ROW (User + Status) ---
             GUILayout.BeginHorizontal();
-            GUILayout.Label($"<b>User:</b> {interaction.UserPrompt}",
-                new GUIStyle(EditorStyles.label) { richText = true });
-            GUILayout.FlexibleSpace();
-            GUILayout.Label(interaction.Status, EditorStyles.miniLabel);
-            GUILayout.EndHorizontal();
+            
+            // 1. User Icon & Prompt
+            var userIcon = EditorGUIUtility.IconContent("d_FilterByLabel").image; // Little tag icon
+            GUILayout.Label(userIcon, GUILayout.Width(16), GUILayout.Height(16));
+            GUILayout.Label($"<b>User:</b> {interaction.UserPrompt}", new GUIStyle(EditorStyles.label) { richText = true, wordWrap = false });
+            
+            GUILayout.FlexibleSpace(); // Push status to the right
 
-            // Task Body
+            // 2. Color Coded Status
+            Color statusColor;
+            string iconName;
+
+            if (!string.IsNullOrEmpty(interaction.ErrorMessage))
+            {
+                statusColor = new Color(1f, 0.4f, 0.4f); // Red
+                iconName = "d_console.erroricon.sml";
+            }
+            else if (interaction.IsCompleted)
+            {
+                statusColor = new Color(0.4f, 1f, 0.4f); // Green
+                iconName = "d_winbtn_mac_max"; // Green dot
+            }
+            else
+            {
+                statusColor = new Color(1f, 0.9f, 0.4f); // Yellow
+                iconName = "d_WaitSpin00";
+            }
+
+            // Save original color
+            var originalContentColor = GUI.contentColor;
+            
+            // Draw Status Text
+            GUI.contentColor = statusColor;
+            GUILayout.Label(new GUIContent($" {interaction.Status}", EditorGUIUtility.IconContent(iconName).image), EditorStyles.boldLabel);
+            
+            // Reset color
+            GUI.contentColor = originalContentColor;
+
+            GUILayout.EndHorizontal();
+            
+            // --- BODY ROW (Task UI) ---
             if (interaction.ActiveTask != null)
             {
                 GUILayout.Space(5);
+                // Indent the task UI slightly for visual hierarchy
+                GUILayout.BeginHorizontal();
+                GUILayout.Space(10); 
+                GUILayout.BeginVertical();
                 interaction.ActiveTask.DrawUI();
+                GUILayout.EndVertical();
+                GUILayout.EndHorizontal();
             }
             else if (!string.IsNullOrEmpty(interaction.ErrorMessage))
             {
                 EditorGUILayout.HelpBox(interaction.ErrorMessage, MessageType.Error);
             }
 
+            GUILayout.Space(4);
             GUILayout.EndVertical();
-            GUILayout.Space(10);
+            GUILayout.Space(5);
         }
 
-        // Simple container for History
         public class AIInteraction
         {
             public string UserPrompt;
