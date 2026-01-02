@@ -4,24 +4,30 @@ namespace DenizYanar.ForgeAI.Tasks
 {
     public abstract class AITask
     {
-        // ... Existing Properties ...
+        
         public abstract string DisplayName { get; }
         public string RawData { get; set; }
+        
+        // Describe what this tool does for the Planner AI
+        public virtual string ToolDescription => "Generic Task";
+        
+        // Context passed from previous steps
+        public string ContextFromPreviousSteps { get; set; } = "";
         
         // State Tracking
         public bool IsExecuted { get; protected set; }
         public bool IsUndone { get; protected set; }
         public string ExecutionResult { get; protected set; }
 
-        // COMMAND PATTERN: Capabilities
         public virtual bool CanUndo => false; // Default to false (e.g. Chat)
 
-        // ... Existing Methods (GenerateFullPrompt, ProcessResponse) ...
         public abstract string GenerateFullPrompt(string userInstruction);
         public abstract void ProcessResponse(string rawResponse);
 
-        // COMMAND PATTERN: Actions
         public abstract void Execute();
+        
+        // Helper to expose execution results to the next step
+        public virtual string GetExecutionResult() => "";
         
         public virtual void Undo() 
         {

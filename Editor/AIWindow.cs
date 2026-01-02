@@ -18,42 +18,81 @@ namespace DenizYanar.ForgeAI.Tasks
         private string[] _taskDisplayNames;
 
         private readonly List<AIInteraction> _interactions = new();
+        
+        // Optimization: Cached Styles
+        private GUIStyle _userPromptStyle;
+        private GUIStyle _countStyle;
+        private bool _stylesInitialized = false;
 
         [MenuItem("Tools/Forge AI Agent")]
         public static void ShowWindow() => GetWindow<AIWindow>("AI Agent");
 
         private void OnEnable()
         {
-            // Initialize available tasks
-            _availableTaskTemplates = new List<AITask>
+            _availableTaskTemplates = new List<AITask>();
+
+            // This is much faster than standard C# reflection in the Editor
+            var taskTypes = TypeCache.GetTypesDerivedFrom<AITask>();
+
+            foreach (var type in taskTypes)
             {
-                new MessageTask(),
-                new BatchMoveTask(),
-                new BatchRenameTask(),
-                new GitOperationTask(),
+                // Skip abstract classes (like your base AIOperationTask or AITask itself)
+                if (type.IsAbstract || type.IsInterface) continue;
+
+                try
+                {
+                    // Create an instance of the task to get its DisplayName
+                    var taskInstance = (AITask)System.Activator.CreateInstance(type);
+                    _availableTaskTemplates.Add(taskInstance);
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogError($"[ForgeAI] Failed to load task {type.Name}: {e.Message}");
+                }
+            }
+
+            _availableTaskTemplates.Sort((a, b) => string.Compare(a.DisplayName, b.DisplayName));
+
+            // Update the dropdown array
+            _taskDisplayNames = _availableTaskTemplates.Select(x => x.DisplayName).ToArray();
+            
+            // Force styles to re-init
+            _stylesInitialized = false; 
+        }
+
+        private void InitStyles()
+        {
+            if (_stylesInitialized) return;
+
+            _userPromptStyle = new GUIStyle(EditorStyles.label)
+            {
+                richText = true,
+                wordWrap = true,
+                alignment = TextAnchor.MiddleLeft
             };
 
-            _taskDisplayNames = _availableTaskTemplates.Select(x => x.DisplayName).ToArray();
+            _countStyle = new GUIStyle(EditorStyles.miniLabel) 
+            { 
+                alignment = TextAnchor.MiddleRight 
+            };
+
+            _stylesInitialized = true;
         }
 
         private void OnGUI()
         {
-            // Simple Header with Padding
+            InitStyles(); // Ensure styles exist
+
             GUILayout.BeginVertical(EditorStyles.helpBox);
             GUILayout.Label("Forge AI Assistant", EditorStyles.boldLabel);
             GUILayout.EndVertical();
 
             GUILayout.Space(5);
-
             DrawInputArea();
-
             GUILayout.Space(5);
-
             DrawTaskHistory();
         }
 
-        // Add this method to the class to ensure the UI updates 
-        // immediately when you select/deselect files in the Project window.
         private void OnSelectionChange()
         {
             Repaint();
@@ -70,39 +109,28 @@ namespace DenizYanar.ForgeAI.Tasks
             GUILayout.Label("Task Mode:", GUILayout.Width(70));
             _selectedTaskIndex = EditorGUILayout.Popup(_selectedTaskIndex, _taskDisplayNames);
 
-            // --- NEW CODE STARTS HERE ---
-            GUILayout.FlexibleSpace(); // Push the count to the right side
+            GUILayout.FlexibleSpace();
 
             int selectionCount = Selection.objects.Length;
             string labelText = $"{selectionCount} File{(selectionCount != 1 ? "s" : "")} Selected";
 
-            // Style it: Gray normally, Reddish if 0 (visual warning)
-            var countStyle = new GUIStyle(EditorStyles.miniLabel) { alignment = TextAnchor.MiddleRight };
-            if (selectionCount == 0)
-            {
-                countStyle.normal.textColor = new Color(1f, 0.6f, 0.6f); // Soft Red
-            }
+            if (selectionCount == 0) _countStyle.normal.textColor = new Color(1f, 0.6f, 0.6f);
+            else _countStyle.normal.textColor = GUI.skin.label.normal.textColor;
 
-            GUILayout.Label(labelText, countStyle);
-            // --- NEW CODE ENDS HERE ---
-
+            GUILayout.Label(labelText, _countStyle);
             GUILayout.EndHorizontal();
 
             GUILayout.Space(5);
 
-            // Row 2: Prompt Area
             GUILayout.Label("Instruction:");
             GUI.SetNextControlName("PromptInput");
             _currentPrompt = EditorGUILayout.TextArea(_currentPrompt, GUILayout.Height(60));
 
             GUILayout.Space(5);
 
-            // Row 3: Buttons
             GUILayout.BeginHorizontal();
-
-            // Highlight the Execute button
             var defaultColor = GUI.backgroundColor;
-            GUI.backgroundColor = new Color(0.6f, 0.8f, 1f); // Soft Blue
+            GUI.backgroundColor = new Color(0.6f, 0.8f, 1f);
 
             if (GUILayout.Button(new GUIContent(" Execute Request", EditorGUIUtility.IconContent("d_PlayButton").image),
                     GUILayout.Height(30)))
@@ -111,11 +139,11 @@ namespace DenizYanar.ForgeAI.Tasks
                 {
                     PerformTask(_currentPrompt);
                     _currentPrompt = "";
-                    GUI.FocusControl(null); // Deselect text area
+                    GUI.FocusControl(null);
                 }
             }
 
-            GUI.backgroundColor = defaultColor; // Reset color
+            GUI.backgroundColor = defaultColor;
 
             if (GUILayout.Button(new GUIContent(" Clear", EditorGUIUtility.IconContent("d_TreeEditor.Trash").image),
                     GUILayout.Height(30), GUILayout.Width(80)))
@@ -137,20 +165,45 @@ namespace DenizYanar.ForgeAI.Tasks
                 return;
             }
 
+            // OPTIMIZATION: Collapse all previous interactions to save rendering cost
+            foreach (var oldInteraction in _interactions)
+            {
+                oldInteraction.IsExpanded = false;
+            }
+
             var template = _availableTaskTemplates[_selectedTaskIndex];
             var activeTask = (AITask)System.Activator.CreateInstance(template.GetType());
 
             string fullPromptToSend = activeTask.GenerateFullPrompt(userPrompt);
 
+            // Handle the case where the task aborts (e.g. no files selected)
+            if (string.IsNullOrEmpty(fullPromptToSend))
+            {
+                var errorInteraction = new AIInteraction
+                {
+                    UserPrompt = userPrompt,
+                    Status = "Aborted",
+                    ErrorMessage = "Task requires selected files, but none were found.",
+                    IsCompleted = true,
+                    IsExpanded = true // Keep error visible
+                };
+                
+                _interactions.Add(errorInteraction);
+                _shouldAutoScroll = true;
+                Repaint();
+                return;
+            }
+
             var newInteraction = new AIInteraction
             {
                 UserPrompt = userPrompt,
                 Status = "Thinking...",
-                ActiveTask = activeTask
+                ActiveTask = activeTask,
+                IsExpanded = true // Only expand the newest one
             };
 
             _interactions.Add(newInteraction);
-            _shouldAutoScroll = true; // Trigger scroll to bottom
+            _shouldAutoScroll = true;
 
             var rawResponse = await AIClient.SendRequestAsync(fullPromptToSend, storedKey);
 
@@ -176,12 +229,14 @@ namespace DenizYanar.ForgeAI.Tasks
             using var scrollView = new EditorGUILayout.ScrollViewScope(_scrollPosition);
             _scrollPosition = scrollView.scrollPosition;
 
+            // Optional: Limit history to last 50 items to prevent eventual memory/perf bloat
+            // int startIndex = Mathf.Max(0, _interactions.Count - 50);
+            
             for (int i = 0; i < _interactions.Count; i++)
             {
                 DrawInteractionItem(_interactions[i]);
             }
 
-            // Auto-scroll logic
             if (_shouldAutoScroll && Event.current.type == EventType.Repaint)
             {
                 _scrollPosition.y = float.MaxValue;
@@ -192,93 +247,93 @@ namespace DenizYanar.ForgeAI.Tasks
 
         private void DrawInteractionItem(AIInteraction interaction)
         {
+            // Outer container
             GUILayout.BeginVertical(EditorStyles.helpBox);
-            GUILayout.Space(4);
+            GUILayout.Space(2);
 
-            // --- HEADER ROW (User + Status) ---
+            // --- HEADER ROW (Click to Toggle Expand) ---
             GUILayout.BeginHorizontal();
 
-            // 1. User Icon (Fixed Size)
-            var userIcon = EditorGUIUtility.IconContent("d_FilterByLabel").image;
-            GUILayout.Label(userIcon, GUILayout.Width(16), GUILayout.Height(16));
+            // 1. Foldout / Icon
+            // We use a button that acts as a toggle for IsExpanded
+            var icon = interaction.IsExpanded 
+                ? EditorGUIUtility.IconContent("d_icon dropdown").image 
+                : EditorGUIUtility.IconContent("d_forward").image;
 
-            // 2. Clickable User Prompt (Flexible Width + Word Wrap)
-            // We create a custom style based on the default label but enforce wrapping
-            var promptStyle = new GUIStyle(EditorStyles.label)
+            if (GUILayout.Button(icon, EditorStyles.label, GUILayout.Width(16), GUILayout.Height(16)))
             {
-                richText = true,
-                wordWrap = true,
-                alignment = TextAnchor.MiddleLeft // Ensure text starts from the left
-            };
-
-            // We use a Button that looks like a Label.
-            // This handles the "Click" detection automatically.
-            // We remove the default button padding/background by using the label style.
-            GUIContent content = new GUIContent($"<b>User:</b> {interaction.UserPrompt}",
-                "Click to copy prompt to clipboard");
-
-            if (GUILayout.Button(content, promptStyle))
-            {
-                GUIUtility.systemCopyBuffer = interaction.UserPrompt;
-                ShowNotification(new GUIContent("Prompt Copied!")); // Shows a temporary toast message in the window
+                interaction.IsExpanded = !interaction.IsExpanded;
             }
 
-            // 3. Status Section (Right Aligned)
-            // We allow the prompt to take up all available space, pushing the status to the right.
-            // If the prompt is long, it will wrap, and the status will stay on the right.
+            // 2. User Prompt (Clicking text also toggles expand)
+            if (GUILayout.Button(new GUIContent($"<b>User:</b> {interaction.UserPrompt}", "Click to toggle details"), _userPromptStyle))
+            {
+                interaction.IsExpanded = !interaction.IsExpanded;
+            }
+
             GUILayout.FlexibleSpace();
 
-            // Determine Status Color & Icon
+            // 3. Status
+            DrawStatus(interaction);
+
+            GUILayout.EndHorizontal();
+
+            // --- OPTIMIZATION: ONLY DRAW BODY IF EXPANDED ---
+            if (interaction.IsExpanded)
+            {
+                GUILayout.Space(5);
+                
+                if (interaction.ActiveTask != null)
+                {
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Space(15); // Indent
+                    GUILayout.BeginVertical();
+                    
+                    // This is the expensive call. Skipping it when collapsed saves huge FPS.
+                    interaction.ActiveTask.DrawUI();
+                    
+                    GUILayout.EndVertical();
+                    GUILayout.EndHorizontal();
+                }
+                else if (!string.IsNullOrEmpty(interaction.ErrorMessage))
+                {
+                    EditorGUILayout.HelpBox(interaction.ErrorMessage, MessageType.Error);
+                }
+                
+                GUILayout.Space(5);
+            }
+
+            GUILayout.EndVertical();
+        }
+
+        private void DrawStatus(AIInteraction interaction)
+        {
             Color statusColor;
             string iconName;
 
             if (!string.IsNullOrEmpty(interaction.ErrorMessage))
             {
-                statusColor = new Color(1f, 0.4f, 0.4f); // Red
+                statusColor = new Color(1f, 0.4f, 0.4f);
                 iconName = "d_console.erroricon.sml";
             }
             else if (interaction.IsCompleted)
             {
-                statusColor = new Color(0.4f, 1f, 0.4f); // Green
+                statusColor = new Color(0.4f, 1f, 0.4f);
                 iconName = "d_winbtn_mac_max";
             }
             else
             {
-                statusColor = new Color(1f, 0.9f, 0.4f); // Yellow
+                statusColor = new Color(1f, 0.9f, 0.4f);
                 iconName = "d_WaitSpin00";
             }
 
-            // Draw Status
             var originalContentColor = GUI.contentColor;
             GUI.contentColor = statusColor;
 
-            // Using a Layout Option for width ensures the status doesn't jump around too much
             GUILayout.Label(new GUIContent($" {interaction.Status}", EditorGUIUtility.IconContent(iconName).image),
-                EditorStyles.boldLabel, GUILayout.Width(80)); // Fixed width for status helps alignment
+                EditorStyles.boldLabel, GUILayout.Width(80));
 
             GUI.contentColor = originalContentColor;
-
-            GUILayout.EndHorizontal();
-
-            // --- BODY ROW (Task UI) ---
-            if (interaction.ActiveTask != null)
-            {
-                GUILayout.Space(5);
-                GUILayout.BeginHorizontal();
-                GUILayout.Space(10); // Indent
-                GUILayout.BeginVertical();
-                interaction.ActiveTask.DrawUI();
-                GUILayout.EndVertical();
-                GUILayout.EndHorizontal();
-            }
-            else if (!string.IsNullOrEmpty(interaction.ErrorMessage))
-            {
-                EditorGUILayout.HelpBox(interaction.ErrorMessage, MessageType.Error);
-            }
-
-            GUILayout.Space(4);
-            GUILayout.EndVertical();
-            GUILayout.Space(5);
         }
 
         public class AIInteraction
@@ -288,6 +343,9 @@ namespace DenizYanar.ForgeAI.Tasks
             public bool IsCompleted;
             public string ErrorMessage;
             public AITask ActiveTask;
+            
+            // New field to track UI state per item
+            public bool IsExpanded = true; 
         }
     }
 }
