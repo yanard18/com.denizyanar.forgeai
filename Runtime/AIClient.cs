@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text;
 using DenizYanar.AITool;
 using UnityEngine;
@@ -7,51 +8,47 @@ namespace DenizYanar.ForgeAI
 {
     public static class AIClient
     {
-        private const string API_URL = "https://api.openai.com/v1/chat/completions";
-        
-        // Return type is Awaitable<string>, Unity 6's new standard
-        public static async Awaitable<string> SendRequestAsync(string prompt, string apiKey)
+        private const string ApiUrl = "https://api.openai.com/v1/chat/completions";
+        private const string ContentType = "application/json";
+        private const string SystemInstruction = "You are a Unity helper. Respond with C# code only when asked.";
+
+        public static async Awaitable<string> SendRequestAsync(string userPrompt, string apiKey)
         {
-            // 1. Prepare Data
-            var requestData = new ChatRequest();
-            requestData.messages.Add(new Message("system", "You are a Unity helper. Respond with C# code only when asked."));
-            requestData.messages.Add(new Message("user", prompt));
-
-            string json = JsonUtility.ToJson(requestData);
-            byte[] bodyRaw = Encoding.UTF8.GetBytes(json);
-
-            // 2. Setup WebRequest
-            using (UnityWebRequest webRequest = new UnityWebRequest(API_URL, "POST"))
+            var requestPayload = new ChatRequest
             {
-                webRequest.uploadHandler = new UploadHandlerRaw(bodyRaw);
-                webRequest.downloadHandler = new DownloadHandlerBuffer();
-                webRequest.SetRequestHeader("Content-Type", "application/json");
-                webRequest.SetRequestHeader("Authorization", "Bearer " + apiKey);
+                messages = new List<Message>
+                {
+                    new("system", SystemInstruction),
+                    new("user", userPrompt)
+                }
+            };
 
-                // 3. The Unity 6 Magic: Await the AsyncOperation directly
-                // Note: In Unity 6, we can await the SendWebRequest operation directly
-                // or wrap it if strictly using the Awaitable pattern for older 2023 compatibility.
-                // The cleanest Unity 6 native way:
-                var operation = webRequest.SendWebRequest();
-                
-                while (!operation.isDone) 
-                {
-                    // This creates a non-blocking loop on the main thread
-                    await Awaitable.NextFrameAsync();
-                }
+            var json = JsonUtility.ToJson(requestPayload);
+            var bodyRaw = Encoding.UTF8.GetBytes(json);
 
-                // 4. Handle Result
-                if (webRequest.result == UnityWebRequest.Result.Success)
-                {
-                    var response = JsonUtility.FromJson<ChatResponse>(webRequest.downloadHandler.text);
-                    return response.choices[0].message.content;
-                }
-                else
-                {
-                    Debug.LogError($"AI Error: {webRequest.error}");
-                    return null;
-                }
+            using var webRequest = new UnityWebRequest(ApiUrl, "POST");
+
+            webRequest.uploadHandler = new UploadHandlerRaw(bodyRaw);
+            webRequest.downloadHandler = new DownloadHandlerBuffer();
+            webRequest.SetRequestHeader("Content-Type", ContentType);
+            webRequest.SetRequestHeader("Authorization", $"Bearer {apiKey}");
+
+            var operation = webRequest.SendWebRequest();
+
+            // Manual await loop for Awaitable compatibility
+            while (!operation.isDone)
+            {
+                await Awaitable.NextFrameAsync();
             }
+
+            if (webRequest.result != UnityWebRequest.Result.Success)
+            {
+                Debug.LogError($"AI Error: {webRequest.error}");
+                return null;
+            }
+
+            var response = JsonUtility.FromJson<ChatResponse>(webRequest.downloadHandler.text);
+            return response?.choices?[0].message.content;
         }
     }
 }
