@@ -14,6 +14,8 @@ namespace ForgeAI
         {
             public string model;
             public List<OpenAIMessage> messages;
+            public float temperature;
+            public int max_tokens;
         }
 
         [Serializable]
@@ -35,18 +37,20 @@ namespace ForgeAI
             public OpenAIMessage message;
         }
 
-        public async Task<string> SendRequest(string apiKey, string model, List<ChatMessage> history)
+        public async Task<string> SendRequestAsync(LLMRequest request)
         {
             var apiMessages = new List<OpenAIMessage>();
-            foreach (var msg in history)
+            foreach (var msg in request.History)
             {
                 apiMessages.Add(new OpenAIMessage { role = msg.role, content = msg.content });
             }
 
             var requestData = new OpenAIRequest
             {
-                model = model,
-                messages = apiMessages
+                model = request.Model,
+                messages = apiMessages,
+                temperature = request.Temperature,
+                max_tokens = request.MaxTokens
             };
 
             string json = JsonUtility.ToJson(requestData);
@@ -57,7 +61,7 @@ namespace ForgeAI
                 www.uploadHandler = new UploadHandlerRaw(bodyRaw);
                 www.downloadHandler = new DownloadHandlerBuffer();
                 www.SetRequestHeader("Content-Type", "application/json");
-                www.SetRequestHeader("Authorization", "Bearer " + apiKey);
+                www.SetRequestHeader("Authorization", "Bearer " + request.ApiKey);
 
                 var operation = www.SendWebRequest();
 

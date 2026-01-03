@@ -20,11 +20,18 @@ namespace ForgeAI
             public List<ChatMessage> messages;
         }
 
-        private static readonly Dictionary<AIProvider, ILLMProvider> Providers = new Dictionary<AIProvider, ILLMProvider>
+        // Simple Factory for now. In a larger system, use Dependency Injection.
+        private static ILLMProvider GetProvider(AIProvider providerType)
         {
-            { AIProvider.OpenAI, new OpenAIProvider() }
-            // Gemini provider will be added here once implemented
-        };
+            switch (providerType)
+            {
+                case AIProvider.OpenAI:
+                    return new OpenAIProvider();
+                // case AIProvider.Gemini: return new GeminiProvider();
+                default:
+                    return null;
+            }
+        }
 
         public static async Task<string> SendRequest(List<ChatMessage> conversationHistory)
         {
@@ -47,14 +54,25 @@ namespace ForgeAI
                 return "Error: API Key is missing. Please configure it in the settings.";
             }
 
-            if (Providers.TryGetValue(settings.provider, out var provider))
+            var provider = GetProvider(settings.provider);
+            if (provider != null)
             {
-                string response = await provider.SendRequest(apiKey, settings.ModelName, conversationHistory);
+                var request = new LLMRequest
+                {
+                    ApiKey = apiKey,
+                    Model = settings.ModelName,
+                    History = conversationHistory,
+                    // Future: Add settings for Temp/MaxTokens here
+                    Temperature = 0.7f,
+                    MaxTokens = 4096 
+                };
+
+                string response = await provider.SendRequestAsync(request);
                 ForgeLogger.Log("RawResponse", "Received from LLM", response);
                 return response;
             }
             
-            return $"Error: Implementation for {settings.provider} is pending.";
+            return $"Error: Implementation for {settings.provider} is pending or provider not found.";
         }
     }
 }
