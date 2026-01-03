@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
 
@@ -48,7 +49,7 @@ namespace ForgeAI
                 var attr = info.Method.GetCustomAttribute<ForgeToolAttribute>();
                 return attr != null && attr.RequiresApproval;
             }
-            return true; // Safety default
+            return true; 
         }
 
         public static string GetSystemPrompt()
@@ -69,34 +70,83 @@ namespace ForgeAI
             sb.AppendLine("```json");
             sb.AppendLine("{ \"tool\": \"ToolName\", \"args\": [\"arg1\", \"arg2\"] }");
             sb.AppendLine("```");
+            sb.AppendLine("You can output MULTIPLE tool blocks in one response if you need to perform a batch of actions.");
             sb.AppendLine("Do not use tools if you can answer directly.");
             sb.AppendLine("When you receive an Observation, analyze it and decide the next step.");
+            sb.AppendLine("IMPORTANT: If you decide to perform an action, you MUST output the JSON tool call IMMEDIATELY. Do not describe the plan without generating the tool JSON.");
             
             return sb.ToString();
         }
 
-        public static string ExtractActionJson(string response)
+        public static List<ToolAction> ExtractAllActions(string response)
         {
-            // Find the first '{' and the last '}'
-            int start = response.IndexOf('{');
-            int end = response.LastIndexOf('}');
-
-            if (start != -1 && end != -1 && end > start)
+            var actions = new List<ToolAction>();
+            
+            int index = 0;
+            while (index < response.Length)
             {
-                string jsonCandidate = response.Substring(start, end - start + 1);
-                ForgeLogger.Log("ActionParsing", "Extracted JSON Candidate", jsonCandidate);
-                return jsonCandidate;
+                int start = response.IndexOf('{', index);
+                if (start == -1) break;
+
+                int end = FindMatchingBrace(response, start);
+                if (end != -1)
+                {
+                    string candidate = response.Substring(start, end - start + 1);
+                    if (candidate.Contains("\"tool\"") || candidate.Contains("'tool'"))
+                    {
+                        var action = ParseToolAction(candidate);
+                        if (action != null && !string.IsNullOrEmpty(action.tool))
+                        {
+                            actions.Add(action);
+                        }
+                    }
+                    index = end + 1;
+                }
+                else
+                {
+                    index = start + 1;
+                }
             }
             
-            ForgeLogger.Log("ActionParsing", "No JSON brackets found in response");
-            return null;
+            if (actions.Count > 0)
+            {
+                ForgeLogger.Log("ActionParsing", $"Extracted {actions.Count} actions");
+            }
+            return actions;
         }
 
-        public static string ExecuteTool(string jsonAction)
+        private static int FindMatchingBrace(string text, int startIndex)
         {
-            var action = ParseToolAction(jsonAction);
-            if (action == null) return "Error: Could not parse action.";
-            return ExecuteTool(action);
+            int depth = 0;
+            bool inQuote = false;
+            char quoteChar = '\0';
+
+            for (int i = startIndex; i < text.Length; i++)
+            {
+                char c = text[i];
+                if (inQuote)
+                {
+                    if (c == quoteChar && text[i - 1] != '\\') inQuote = false;
+                }
+                else
+                {
+                    if (c == '"' || c == '\'') { inQuote = true; quoteChar = c; }
+                    else if (c == '{') depth++;
+                    else if (c == '}')
+                    {
+                        depth--;
+                        if (depth == 0) return i;
+                    }
+                }
+            }
+            return -1;
+        }
+
+        public static string ExtractActionJson(string response)
+        {
+            var actions = ExtractAllActions(response);
+            if (actions.Count > 0) return "found"; 
+            return null;
         }
 
         public static string ExecuteTool(ToolAction action)
@@ -114,8 +164,6 @@ namespace ForgeAI
                 if (availableTools.TryGetValue(action.tool, out var toolInfo))
                 {
                     var parameters = toolInfo.Method.GetParameters();
-                    // Allow for optional parameters or fuzzy matching in future, but for now strict count check
-                    // We might want to fill missing args with defaults, but let's stick to strict for safety first.
                     if (action.args == null || action.args.Length != parameters.Length)
                     {
                         return $"Error: Argument count mismatch. Expected {parameters.Length}, got {action.args?.Length ?? 0}.";
@@ -131,7 +179,6 @@ namespace ForgeAI
                         }
                         catch
                         {
-                            // fallback for basic types if Convert fails directly
                             invokeArgs[i] = action.args[i];
                         }
                     }
@@ -159,71 +206,42 @@ namespace ForgeAI
             public string[] args;
         }
 
-        /// <summary>
-        /// A robust, dependency-free parser that tolerates common LLM JSON errors 
-        /// (single quotes, mixed types, trailing commas).
-        /// </summary>
         public static ToolAction ParseToolAction(string json)
         {
             var action = new ToolAction();
             
-            // 1. Extract Tool Name
-            // Look for "tool" or 'tool', followed by colon, then quotes
-            var toolMatch = System.Text.RegularExpressions.Regex.Match(json, @"[""']tool[""']\s*:\s*[""']([^""']+)[""']");
+            var toolMatch = Regex.Match(json, @"[""']tool[""']\s*:\s*[""']([^""']+)[""']");
             if (toolMatch.Success)
             {
                 action.tool = toolMatch.Groups[1].Value;
             }
 
-            // 2. Extract Arguments Array
-            // Look for "args" or 'args', followed by colon, then start bracket
-            var argsStartMatch = System.Text.RegularExpressions.Regex.Match(json, @"[""']args[""']\s*:\s*\[");
+            var argsStartMatch = Regex.Match(json, @"[""']args[""']\s*:\s*[""']");
             if (argsStartMatch.Success)
             {
                 int arrayStartIndex = argsStartMatch.Index + argsStartMatch.Length;
-                int arrayEndIndex = -1;
+                int end = -1;
                 int depth = 0;
                 bool inQuote = false;
                 char quoteChar = '\0';
-
-                // Find the matching closing bracket ']'
-                for (int i = arrayStartIndex; i < json.Length; i++)
-                {
-                    char c = json[i];
-                    if (inQuote)
-                    {
-                        if (c == quoteChar && json[i - 1] != '\\') inQuote = false;
-                    }
-                    else
-                    {
-                        if (c == '"' || c == '\'') { inQuote = true; quoteChar = c; }
-                        else if (c == '[') depth++;
-                        else if (c == ']')
-                        {
-                            if (depth == 0)
-                            {
-                                arrayEndIndex = i;
-                                break;
-                            }
-                            depth--;
-                        }
-                    }
+                for(int i = arrayStartIndex - 1; i < json.Length; i++) {
+                     char c = json[i];
+                     if(inQuote) { if(c==quoteChar && json[i-1]!='\\') inQuote=false; }
+                     else {
+                         if(c=='"'||c=='\'') { inQuote=true; quoteChar=c; }
+                         else if(c=='[') depth++;
+                         else if(c==']') { depth--; if(depth==0) { end=i; break; } }
+                     }
                 }
 
-                if (arrayEndIndex != -1)
+                if (end != -1)
                 {
-                    string argsContent = json.Substring(arrayStartIndex, arrayEndIndex - arrayStartIndex);
+                    string argsContent = json.Substring(arrayStartIndex, end - arrayStartIndex);
                     action.args = ParseArgumentList(argsContent);
                 }
-                else
-                {
-                    action.args = new string[0];
-                }
+                else action.args = new string[0];
             }
-            else
-            {
-                action.args = new string[0];
-            }
+            else action.args = new string[0];
 
             return action;
         }
@@ -238,50 +256,19 @@ namespace ForgeAI
             for (int i = 0; i < content.Length; i++)
             {
                 char c = content[i];
-
                 if (inQuote)
                 {
-                    if (c == quoteChar && content[i - 1] != '\\') 
-                    {
-                        inQuote = false; 
-                    }
-                    else
-                    {
-                        currentArg.Append(c);
-                    }
+                    if (c == quoteChar && content[i - 1] != '\\') inQuote = false; 
+                    else currentArg.Append(c);
                 }
                 else
                 {
-                    if (c == '"' || c == '\'') 
-                    {
-                        inQuote = true; 
-                        quoteChar = c;
-                    }
-                    else if (c == ',')
-                    {
-                        // End of argument
-                        list.Add(currentArg.ToString().Trim());
-                        currentArg.Clear();
-                    }
-                    else
-                    {
-                        // Capture unquoted values (numbers, booleans)
-                        // Ignore whitespace if we haven't started capturing yet? 
-                        // Actually simplistic capture is fine, we Trim() later.
-                        if (!char.IsWhiteSpace(c))
-                        {
-                            currentArg.Append(c);
-                        }
-                    }
+                    if (c == '"' || c == '\'') { inQuote = true; quoteChar = c; }
+                    else if (c == ',') { list.Add(currentArg.ToString().Trim()); currentArg.Clear(); }
+                    else if (!char.IsWhiteSpace(c)) currentArg.Append(c);
                 }
             }
-
-            // Add the last argument
-            if (currentArg.Length > 0)
-            {
-                list.Add(currentArg.ToString().Trim());
-            }
-
+            if (currentArg.Length > 0) list.Add(currentArg.ToString().Trim());
             return list.ToArray();
         }
     }

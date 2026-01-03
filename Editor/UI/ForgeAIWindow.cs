@@ -133,7 +133,11 @@ namespace ForgeAI
                 // AI Response Text
                 if (!string.IsNullOrEmpty(interaction.AIResponse))
                 {
-                    GUILayout.Label(interaction.AIResponse, EditorStyles.wordWrappedLabel);
+                    if (GUILayout.Button(new GUIContent(interaction.AIResponse, "Click to Copy"), EditorStyles.wordWrappedLabel))
+                    {
+                        EditorGUIUtility.systemCopyBuffer = interaction.AIResponse;
+                        ShowNotification(new GUIContent("Copied to Clipboard"));
+                    }
                 }
 
                 // Proposed Action (Waiting for User)
