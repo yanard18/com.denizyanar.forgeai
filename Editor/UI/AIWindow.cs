@@ -24,7 +24,7 @@ namespace DenizYanar.ForgeAI.Tasks
         private GUIStyle _countStyle;
         private bool _stylesInitialized = false;
 
-        [MenuItem("Tools/Forge AI Agent")]
+        [MenuItem("Tools/Forge AI Agent #&f")]
         public static void ShowWindow() => GetWindow<AIWindow>("AI Agent");
 
         private void OnEnable()
