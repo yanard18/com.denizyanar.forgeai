@@ -14,8 +14,10 @@ namespace ForgeAI
         private List<ChatMessage> conversation = new List<ChatMessage>();
         private const int MAX_STEPS = 5;
 
+        public IReadOnlyList<ChatMessage> History => conversation;
+
         // Events for the View to subscribe to
-        public event Action<string, string> OnMessageReceived; // role, content
+        public event Action OnHistoryChanged; 
         public event Action<bool> OnProcessingStateChanged;
         public event Action<string> OnError;
 
@@ -29,6 +31,7 @@ namespace ForgeAI
         {
             conversation.Clear();
             conversation.Add(new ChatMessage { role = "system", content = ReActEngine.GetSystemPrompt() });
+            OnHistoryChanged?.Invoke();
         }
 
         public async Task ChatAsync(string userPrompt)
@@ -41,7 +44,7 @@ namespace ForgeAI
             {
                 // 1. Add User Message
                 conversation.Add(new ChatMessage { role = "user", content = userPrompt });
-                OnMessageReceived?.Invoke("User", userPrompt);
+                OnHistoryChanged?.Invoke();
                 ForgeLogger.Log("User", userPrompt);
 
                 // 2. Start ReAct Loop
@@ -59,22 +62,20 @@ namespace ForgeAI
                     }
 
                     conversation.Add(new ChatMessage { role = "assistant", content = response });
-                    OnMessageReceived?.Invoke("AI", response);
+                    OnHistoryChanged?.Invoke();
                     ForgeLogger.Log("AI", response);
 
                     // Check for Tool Action
                     var jsonAction = ReActEngine.ExtractActionJson(response);
                     if (!string.IsNullOrEmpty(jsonAction))
                     {
-                        OnMessageReceived?.Invoke("System", "Executing tool...");
-                        
                         // Execute Tool
                         var observation = ReActEngine.ExecuteTool(jsonAction);
                         
                         // Feed observation back to LLM
-                        OnMessageReceived?.Invoke("Observation", observation);
                         ForgeLogger.Log("Observation", observation, "Action: " + jsonAction);
                         conversation.Add(new ChatMessage { role = "user", content = "Observation: " + observation });
+                        OnHistoryChanged?.Invoke();
                     }
                     else
                     {

@@ -7,9 +7,9 @@ namespace ForgeAI
     {
         private string prompt = "";
         private Vector2 scrollPosition;
-        private System.Collections.Generic.List<string> chatHistory = new System.Collections.Generic.List<string>();
         private bool isProcessing = false;
         private ForgeAgent agent;
+        private string lastError = "";
 
         [MenuItem("Window/ForgeAI Assistant #&f")]
         public static void ShowWindow()
@@ -22,7 +22,7 @@ namespace ForgeAI
             if (agent == null)
             {
                 agent = new ForgeAgent();
-                agent.OnMessageReceived += HandleMessage;
+                agent.OnHistoryChanged += Repaint; // Simple: Repaint whenever history changes
                 agent.OnProcessingStateChanged += HandleProcessingState;
                 agent.OnError += HandleError;
             }
@@ -32,16 +32,10 @@ namespace ForgeAI
         {
             if (agent != null)
             {
-                agent.OnMessageReceived -= HandleMessage;
+                agent.OnHistoryChanged -= Repaint;
                 agent.OnProcessingStateChanged -= HandleProcessingState;
                 agent.OnError -= HandleError;
             }
-        }
-
-        private void HandleMessage(string role, string content)
-        {
-            chatHistory.Add($"{role}: {content}");
-            Repaint();
         }
 
         private void HandleProcessingState(bool processing)
@@ -52,7 +46,7 @@ namespace ForgeAI
 
         private void HandleError(string error)
         {
-            chatHistory.Add($"Error: {error}");
+            lastError = error;
             Repaint();
         }
 
@@ -77,8 +71,8 @@ namespace ForgeAI
 
             if (GUILayout.Button("Clear Chat", EditorStyles.toolbarButton))
             {
-                chatHistory.Clear();
                 agent.ClearHistory();
+                lastError = "";
             }
             
             GUILayout.EndHorizontal();
@@ -88,19 +82,45 @@ namespace ForgeAI
         {
             scrollPosition = GUILayout.BeginScrollView(scrollPosition, GUILayout.ExpandHeight(true));
             
-            if (chatHistory.Count == 0)
+            if (agent == null || agent.History.Count == 0)
             {
                 GUILayout.Label("Welcome to ForgeAI. Select a provider and enter your API Key to start.", EditorStyles.wordWrappedLabel);
             }
             else
             {
-                foreach (var msg in chatHistory)
+                foreach (var msg in agent.History)
                 {
+                    // Filter out system messages from visual chat for cleaner UI
+                    if (msg.role == "system") continue;
+
                     GUILayout.BeginVertical(EditorStyles.helpBox);
-                    GUILayout.Label(msg, EditorStyles.wordWrappedLabel);
+                    
+                    // Simple styling
+                    if (msg.role == "user") 
+                    {
+                        GUILayout.Label($"<b>User:</b> {msg.content}", new GUIStyle(EditorStyles.wordWrappedLabel) { richText = true });
+                    }
+                    else if (msg.role == "assistant")
+                    {
+                        GUILayout.Label($"<b>AI:</b> {msg.content}", new GUIStyle(EditorStyles.wordWrappedLabel) { richText = true });
+                    }
+                    else
+                    {
+                        GUILayout.Label($"<i>{msg.role}: {msg.content}</i>", new GUIStyle(EditorStyles.wordWrappedLabel) { richText = true });
+                    }
+                    
                     GUILayout.EndVertical();
                     GUILayout.Space(5);
                 }
+            }
+
+            if (!string.IsNullOrEmpty(lastError))
+            {
+                 GUILayout.BeginVertical(EditorStyles.helpBox);
+                 GUI.color = Color.red;
+                 GUILayout.Label($"Error: {lastError}", EditorStyles.wordWrappedLabel);
+                 GUI.color = Color.white;
+                 GUILayout.EndVertical();
             }
             
             GUILayout.EndScrollView();
@@ -110,12 +130,19 @@ namespace ForgeAI
         {
             GUI.enabled = !isProcessing;
             GUILayout.BeginHorizontal();
+            
+            // Check for Enter key
+            Event e = Event.current;
+            bool enterPressed = e.type == EventType.KeyDown && (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter);
+            
             prompt = EditorGUILayout.TextField(prompt, GUILayout.Height(40));
-            if (GUILayout.Button("Send", GUILayout.Width(60), GUILayout.Height(40)))
+            
+            if (GUILayout.Button("Send", GUILayout.Width(60), GUILayout.Height(40)) || (enterPressed && !string.IsNullOrWhiteSpace(prompt)))
             {
                 if (!string.IsNullOrEmpty(prompt))
                 {
                     SendPrompt();
+                    e.Use(); // Consume event to prevent double firing
                 }
             }
             GUILayout.EndHorizontal();
@@ -125,10 +152,11 @@ namespace ForgeAI
 
         private async void SendPrompt()
         {
-            if (agent == null) OnEnable(); // Safety check
+            if (agent == null) OnEnable();
             
             string currentPrompt = prompt;
-            prompt = ""; // Clear input immediately
+            prompt = "";
+            lastError = ""; // Clear previous errors on new request
             
             ForgeLogger.StartNewSession();
             await agent.ChatAsync(currentPrompt);
