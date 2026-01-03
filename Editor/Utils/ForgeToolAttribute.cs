@@ -9,7 +9,6 @@ namespace ForgeAI
         public string ParameterHints { get; }
         public bool RequiresApproval { get; }
         public bool SupportsUndo { get; }
-        public string UsageInstructions { get; set; }
 
         public ForgeToolAttribute(string description, string parameterHints = "", bool requiresApproval = true, bool supportsUndo = false)
         {
