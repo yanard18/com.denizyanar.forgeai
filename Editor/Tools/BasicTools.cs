@@ -174,7 +174,7 @@ namespace ForgeAI
             catch (System.Exception e) { return $"Error: {e.Message}"; }
         }
 
-        [ForgeTool("Moves multiple assets to a single directory.", "sources:string, targetDirectory:string")]
+        [ForgeTool("Moves multiple assets to a single directory.", "sources:string, targetDirectory:string") { UsageInstructions = "sources is a semi-colon separated string (e.g., 'path1;path2;path3')." }]
         public static string BatchMove(string sources, string targetDirectory)
         {
             targetDirectory = NormalizePath(targetDirectory);
@@ -201,7 +201,7 @@ namespace ForgeAI
             return result;
         }
 
-        [ForgeTool("Renames multiple assets. renamesJson should be: '[{\"p\":\"oldPath\",\"n\":\"newName\"},...]' - Keep paths absolute or relative to Assets.", "renamesJson:string")]
+        [ForgeTool("Renames multiple assets.", "renamesJson:string") { UsageInstructions = "renamesJson format is '[{\"p\":\"old/path\",\"n\":\"newName\"},...]'. Minimize JSON to save tokens." }]
         public static string BatchRename(string renamesJson)
         {
             try
