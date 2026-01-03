@@ -122,10 +122,55 @@ namespace ForgeAI
                     
                     foreach(var action in interaction.ProposedActions)
                     {
-                        GUILayout.BeginHorizontal();
-                        GUILayout.Label("•", GUILayout.Width(10));
-                        GUILayout.Label($"<b>{action.tool}</b>: {string.Join(", ", action.args)}", new GUIStyle(EditorStyles.label) { richText = true, wordWrap = true });
-                        GUILayout.EndHorizontal();
+                        bool drawn = false;
+                        if (action.tool == "MoveAsset" && action.args.Length >= 2)
+                        {
+                            ForgeUI.DrawProposedPlanOperationRow(action.args[0], action.args[1]);
+                            drawn = true;
+                        }
+                        else if (action.tool == "BatchMove" && action.args.Length >= 2)
+                        {
+                            string[] sources = action.args[0].Split(';', System.StringSplitOptions.RemoveEmptyEntries);
+                            if (sources.Length > 0)
+                            {
+                                foreach (var src in sources)
+                                {
+                                    string s = src.Trim();
+                                    string fileName = System.IO.Path.GetFileName(s);
+                                    string dest = System.IO.Path.Combine(action.args[1], fileName).Replace('\\', '/');
+                                    ForgeUI.DrawProposedPlanOperationRow(s, dest);
+                                }
+                                drawn = true;
+                            }
+                        }
+                        else if (action.tool == "BatchRename" && action.args.Length >= 1)
+                        {
+                            // Support both raw JSON and escaped JSON strings
+                            var matches = System.Text.RegularExpressions.Regex.Matches(action.args[0], @"\{\s*\\?""p\\?""\s*:\s*\\?""([^""]+)\\""\s*,\s*\\?""n\\?""\s*:\s*\\?""([^""]+)\\""\s*\}");
+                            if (matches.Count == 0) // Fallback to unescaped check if first one fails
+                                matches = System.Text.RegularExpressions.Regex.Matches(action.args[0], @"\{\s*""p""\s*:\s*""([^""]+)""\s*,\s*""n""\s*:\s*""([^""]+)""\s*\}");
+
+                            if (matches.Count > 0)
+                            {
+                                foreach (System.Text.RegularExpressions.Match m in matches)
+                                {
+                                    string oldPath = m.Groups[1].Value.Replace("\\\"", "\"");
+                                    string newName = m.Groups[2].Value.Replace("\\\"", "\"");
+                                    string directory = System.IO.Path.GetDirectoryName(oldPath);
+                                    string newPath = (string.IsNullOrEmpty(directory) ? newName : System.IO.Path.Combine(directory, newName)).Replace('\\', '/');
+                                    ForgeUI.DrawProposedPlanOperationRow(oldPath, newPath);
+                                }
+                                drawn = true;
+                            }
+                        }
+
+                        if (!drawn)
+                        {
+                            GUILayout.BeginHorizontal();
+                            GUILayout.Label("•", GUILayout.Width(10));
+                            GUILayout.Label($"<b>{action.tool}</b>: {string.Join(", ", action.args)}", new GUIStyle(EditorStyles.label) { richText = true, wordWrap = true });
+                            GUILayout.EndHorizontal();
+                        }
                     }
 
                     GUILayout.Space(5);

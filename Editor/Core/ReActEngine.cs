@@ -267,8 +267,20 @@ namespace ForgeAI
                 char c = content[i];
                 if (inQuote)
                 {
-                    if (c == quoteChar && content[i - 1] != '\\') inQuote = false; 
-                    else currentArg.Append(c);
+                    if (c == quoteChar && i > 0 && content[i - 1] == '\\')
+                    {
+                        // Unescape the quote: remove the backslash and add the quote
+                        currentArg.Remove(currentArg.Length - 1, 1);
+                        currentArg.Append(c);
+                    }
+                    else if (c == quoteChar)
+                    {
+                        inQuote = false;
+                    }
+                    else
+                    {
+                        currentArg.Append(c);
+                    }
                 }
                 else
                 {

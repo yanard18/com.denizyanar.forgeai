@@ -211,7 +211,8 @@ namespace ForgeAI
                 // For a CLI agent, a simple regex or targeted split is safer if format is strict.
                 // However, let's assume the agent can output a clean format.
                 
-                var matches = Regex.Matches(renamesJson, @"\{""p"":""([^""]+)"",""n"":""([^""]+)""\}");
+                // Improved regex to handle potential whitespace from LLM
+                var matches = Regex.Matches(renamesJson, @"\{\s*""p""\s*:\s*""([^""]+)""\s*,\s*""n""\s*:\s*""([^""]+)""\s*\}");
                 int successCount = 0;
                 List<string> errors = new List<string>();
 
