@@ -53,7 +53,8 @@ namespace DenizYanar.ForgeAI.Tasks
             }
 
             StringBuilder sb = new StringBuilder();
-            sb.AppendLine("You are an AI Architect. Break the user's request into a sequential plan using the tools below.");
+            sb.AppendLine("You are a Senior Unity Automation Lead. Create the most EFFICIENT execution plan.");
+    sb.AppendLine("GOAL: Solve the request using the MINIMUM number of steps.");
             sb.AppendLine("AVAILABLE TOOLS:");
             sb.Append(toolsBuilder.ToString());
             sb.AppendLine("---");
@@ -120,7 +121,7 @@ namespace DenizYanar.ForgeAI.Tasks
                 return;
             }
 
-            GUILayout.Label("📋 Execution Plan", EditorStyles.boldLabel);
+            GUILayout.Label("Execution Plan", EditorStyles.boldLabel);
             
 
             for (int i = 0; i < _subTasks.Count; i++)

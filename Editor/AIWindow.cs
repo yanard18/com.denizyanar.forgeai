@@ -319,7 +319,7 @@ namespace DenizYanar.ForgeAI.Tasks
             else if (interaction.IsCompleted)
             {
                 statusColor = new Color(0.4f, 1f, 0.4f);
-                iconName = "d_winbtn_mac_max";
+                iconName = "TestPassed";
             }
             else
             {

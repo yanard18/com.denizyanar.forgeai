@@ -141,7 +141,7 @@ namespace DenizYanar.ForgeAI.Tasks
             
             // Draw Status Message (Success/Error)
             GUILayout.BeginHorizontal();
-            GUILayout.Label(EditorGUIUtility.IconContent("d_winbtn_mac_max").image, GUILayout.Width(16), GUILayout.Height(16));
+            GUILayout.Label(EditorGUIUtility.IconContent("TestPassed").image, GUILayout.Width(16), GUILayout.Height(16));
             GUILayout.Label(StatusMessage, new GUIStyle(EditorStyles.label) { wordWrap = true });
             GUILayout.EndHorizontal();
 
