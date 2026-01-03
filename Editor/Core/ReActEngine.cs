@@ -74,9 +74,14 @@ namespace ForgeAI
             sb.AppendLine("   ```");
             sb.AppendLine("2. **File Editing**: When using `ReplaceText`, you MUST ensure `oldText` matches the file content EXACTLY (including whitespace). ALWAYS `ReadFile` before editing to get the exact string.");
             sb.AppendLine("3. **Path Safety**: Do not guess file paths. Use `ListFiles` to explore if you are unsure.");
-            sb.AppendLine("4. **Batching**: You can output MULTIPLE tool blocks in one response to perform actions in sequence.");
-            sb.AppendLine("5. **Completion**: If you can answer the user's request directly or have finished the task, simply provide the final answer without a tool block.");
+            sb.AppendLine("4. **Batching**: You can output MULTIPLE tool blocks in one response to perform actions in sequence. For moving many files to one folder, use `BatchMove`. For renaming many files, use `BatchRename`.");
+            sb.AppendLine("5. **Bulk Formats**:");
+            sb.AppendLine("   - `BatchMove(sources, targetDir)`: sources is a semi-colon separated string (e.g., 'path1;path2;path3').");
+            sb.AppendLine("   - `BatchRename(renamesJson)`: format is '[{\"p\":\"old/path\",\"n\":\"newName\"},...]'.");
+            sb.AppendLine("6. **Completion**: If you can answer the user's request directly or have finished the task, simply provide the final answer without a tool block.");
+            sb.AppendLine("7. **Action Enforcement**: If your response implies an action (e.g., 'I will move...', 'Creating file...'), you **MUST** include the JSON tool block. Describing the plan without the JSON is strictly forbidden.");
             sb.AppendLine("");
+            sb.AppendLine("CRITICAL: Do not just say you will do something. DO IT by outputting the JSON.");
             sb.AppendLine("Begin!");
             
             return sb.ToString();

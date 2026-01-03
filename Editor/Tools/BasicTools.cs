@@ -127,5 +127,108 @@ namespace ForgeAI
             }
             catch (System.Exception e) { return $"Error: {e.Message}"; }
         }
+
+        [ForgeTool("Moves or renames an asset/file using Unity's AssetDatabase (preserves meta files). Auto-creates directories.", "source:string, destination:string")]
+        public static string MoveAsset(string source, string destination)
+        {
+            source = NormalizePath(source);
+            destination = NormalizePath(destination);
+
+            try
+            {
+                string targetDir = Path.GetDirectoryName(destination);
+                if (!string.IsNullOrEmpty(targetDir) && !Directory.Exists(targetDir))
+                {
+                    Directory.CreateDirectory(targetDir);
+                    AssetDatabase.Refresh();
+                }
+
+                string error = AssetDatabase.MoveAsset(source, destination);
+                if (!string.IsNullOrEmpty(error)) return $"Error: {error}";
+                
+                return $"Success: Moved '{source}' to '{destination}'.";
+            }
+            catch (System.Exception e) { return $"Error: {e.Message}"; }
+        }
+
+        [ForgeTool("Deletes a file or directory using Unity's AssetDatabase.", "path:string")]
+        public static string DeleteAsset(string path)
+        {
+            path = NormalizePath(path);
+            if (AssetDatabase.DeleteAsset(path)) return $"Success: Deleted '{path}'.";
+            return $"Error: Failed to delete '{path}'. Check if it exists.";
+        }
+
+        [ForgeTool("Creates a directory.", "path:string")]
+        public static string CreateDirectory(string path)
+        {
+            path = NormalizePath(path);
+            if (Directory.Exists(path)) return $"Info: Directory '{path}' already exists.";
+            
+            try
+            {
+                Directory.CreateDirectory(path);
+                AssetDatabase.Refresh();
+                return $"Success: Created directory '{path}'.";
+            }
+            catch (System.Exception e) { return $"Error: {e.Message}"; }
+        }
+
+        [ForgeTool("Moves multiple assets to a single directory.", "sources:string, targetDirectory:string")]
+        public static string BatchMove(string sources, string targetDirectory)
+        {
+            targetDirectory = NormalizePath(targetDirectory);
+            if (!Directory.Exists(targetDirectory)) Directory.CreateDirectory(targetDirectory);
+
+            string[] sourcePaths = sources.Split(';', System.StringSplitOptions.RemoveEmptyEntries);
+            int successCount = 0;
+            List<string> errors = new List<string>();
+
+            foreach (var src in sourcePaths)
+            {
+                string s = NormalizePath(src.Trim());
+                string fileName = Path.GetFileName(s);
+                string dest = Path.Combine(targetDirectory, fileName).Replace('\\', '/');
+
+                string err = AssetDatabase.MoveAsset(s, dest);
+                if (string.IsNullOrEmpty(err)) successCount++;
+                else errors.Add($"{s}: {err}");
+            }
+
+            AssetDatabase.Refresh();
+            string result = $"Moved {successCount}/{sourcePaths.Length} assets.";
+            if (errors.Count > 0) result += "\nErrors:\n" + string.Join("\n", errors);
+            return result;
+        }
+
+        [ForgeTool("Renames multiple assets. renamesJson should be: '[{\"p\":\"oldPath\",\"n\":\"newName\"},...]' - Keep paths absolute or relative to Assets.", "renamesJson:string")]
+        public static string BatchRename(string renamesJson)
+        {
+            try
+            {
+                // Simple manual parsing to avoid heavy dependencies, 
+                // but since we are in Unity, we might use JsonUtility if we have a wrapper.
+                // For a CLI agent, a simple regex or targeted split is safer if format is strict.
+                // However, let's assume the agent can output a clean format.
+                
+                var matches = Regex.Matches(renamesJson, @"\{""p"":""([^""]+)"",""n"":""([^""]+)""\}");
+                int successCount = 0;
+                List<string> errors = new List<string>();
+
+                foreach (Match m in matches)
+                {
+                    string path = NormalizePath(m.Groups[1].Value);
+                    string newName = m.Groups[2].Value;
+
+                    string err = AssetDatabase.RenameAsset(path, newName);
+                    if (string.IsNullOrEmpty(err)) successCount++;
+                    else errors.Add($"{path}: {err}");
+                }
+
+                AssetDatabase.Refresh();
+                return $"Renamed {successCount} assets. {(errors.Count > 0 ? "\nErrors: " + string.Join(", ", errors) : "")}";
+            }
+            catch (System.Exception e) { return $"Error: {e.Message}"; }
+        }
     }
 }
