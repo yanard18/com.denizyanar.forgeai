@@ -89,6 +89,8 @@ namespace ForgeAI
                     return "Error: Could not parse action JSON.";
                 }
 
+                ForgeLogger.Log("ToolExecution", $"Invoking {action.tool}", jsonAction);
+
                 if (availableTools.TryGetValue(action.tool, out var toolInfo))
                 {
                     var parameters = toolInfo.Method.GetParameters();

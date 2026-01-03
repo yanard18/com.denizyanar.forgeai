@@ -28,6 +28,13 @@ namespace ForgeAI
                         changed = true;
                     }
 
+                    bool newLogging = EditorGUILayout.Toggle("Enable Logging", settings.EnableLogging);
+                    if (newLogging != settings.EnableLogging)
+                    {
+                        settings.EnableLogging = newLogging;
+                        changed = true;
+                    }
+
                     string currentKey = settings.GetApiKey();
                     string newKey = EditorGUILayout.PasswordField("API Key", currentKey);
                     if (newKey != currentKey)

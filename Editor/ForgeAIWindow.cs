@@ -95,34 +95,38 @@ namespace ForgeAI
 
             conversation.Add(new ChatMessage { role = "user", content = userPrompt });
             chatHistory.Add("User: " + userPrompt);
+            ForgeLogger.Log("User", userPrompt);
             
             isProcessing = true;
             Repaint();
 
             try
             {
-                int maxSteps = 5;
-                int step = 0;
+                const int maxSteps = 5;
+                var step = 0;
 
                 while (step < maxSteps)
                 {
-                    string response = await LLMClient.SendRequest(conversation);
+                    var response = await LLMClient.SendRequest(conversation);
                     
                     if (response.StartsWith("Error:"))
                     {
                         chatHistory.Add("System: " + response);
+                        ForgeLogger.Log("Error", response);
                         break;
                     }
 
                     conversation.Add(new ChatMessage { role = "assistant", content = response });
                     chatHistory.Add("AI: " + response);
+                    ForgeLogger.Log("AI", response);
                     
-                    string jsonAction = ReActEngine.ExtractActionJson(response);
+                    var jsonAction = ReActEngine.ExtractActionJson(response);
                     if (!string.IsNullOrEmpty(jsonAction))
                     {
                         chatHistory.Add("System: Executing tool...");
-                        string observation = ReActEngine.ExecuteTool(jsonAction);
+                        var observation = ReActEngine.ExecuteTool(jsonAction);
                         chatHistory.Add("Observation: " + observation);
+                        ForgeLogger.Log("Observation", observation, "Action: " + jsonAction);
                         
                         conversation.Add(new ChatMessage { role = "user", content = "Observation: " + observation });
                     }
@@ -139,6 +143,7 @@ namespace ForgeAI
             catch (System.Exception e)
             {
                 chatHistory.Add("Critical Error: " + e.Message);
+                ForgeLogger.Log("Exception", e.Message, e.StackTrace);
                 Debug.LogException(e);
             }
             finally

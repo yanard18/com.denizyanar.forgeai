@@ -14,6 +14,7 @@ namespace ForgeAI
     {
         public AIProvider provider = AIProvider.OpenAI;
         public string ModelName = "gpt-4o";
+        public bool EnableLogging = true;
 
         private const string OpenAIKeyPref = "ForgeAI_OpenAIKey";
         private const string GeminiKeyPref = "ForgeAI_GeminiKey";
