@@ -10,7 +10,6 @@ namespace DenizYanar.ForgeAI
     {
         private const string ApiUrl = "https://api.openai.com/v1/chat/completions";
         private const string ContentType = "application/json";
-        private const string SystemInstruction = "You are a Unity AI agent";
 
         public static async Awaitable<string> SendRequestAsync(string userPrompt, string apiKey)
         {
@@ -18,7 +17,6 @@ namespace DenizYanar.ForgeAI
             {
                 messages = new List<Message>
                 {
-                    new("system", SystemInstruction),
                     new("user", userPrompt)
                 }
             };
