@@ -11,6 +11,9 @@ namespace ForgeAI
         private ForgeAgent agent;
         private string lastError = "";
 
+        // Styles
+        private GUIStyle userPromptStyle;
+
         [MenuItem("Window/ForgeAI Assistant #&f")]
         public static void ShowWindow()
         {
@@ -22,9 +25,10 @@ namespace ForgeAI
             if (agent == null)
             {
                 agent = new ForgeAgent();
-                agent.OnHistoryChanged += Repaint; // Simple: Repaint whenever history changes
+                agent.OnHistoryChanged += Repaint; 
                 agent.OnProcessingStateChanged += HandleProcessingState;
                 agent.OnError += HandleError;
+                agent.OnActionProposed += Repaint;
             }
         }
 
@@ -35,6 +39,20 @@ namespace ForgeAI
                 agent.OnHistoryChanged -= Repaint;
                 agent.OnProcessingStateChanged -= HandleProcessingState;
                 agent.OnError -= HandleError;
+                agent.OnActionProposed -= Repaint;
+            }
+        }
+
+        private void InitStyles()
+        {
+            if (userPromptStyle == null)
+            {
+                userPromptStyle = new GUIStyle(EditorStyles.label)
+                {
+                    richText = true,
+                    wordWrap = true,
+                    alignment = TextAnchor.MiddleLeft
+                };
             }
         }
 
@@ -52,6 +70,7 @@ namespace ForgeAI
 
         private void OnGUI()
         {
+            InitStyles();
             DrawToolbar();
             DrawChatArea();
             DrawInputArea();
@@ -61,20 +80,9 @@ namespace ForgeAI
         {
             GUILayout.BeginHorizontal(EditorStyles.toolbar);
             GUILayout.Label("ForgeAI", EditorStyles.boldLabel);
-            
             GUILayout.FlexibleSpace();
-            
-            if (GUILayout.Button("Preferences", EditorStyles.toolbarButton))
-            {
-                SettingsService.OpenUserPreferences("Preferences/ForgeAI");
-            }
-
-            if (GUILayout.Button("Clear Chat", EditorStyles.toolbarButton))
-            {
-                agent.ClearHistory();
-                lastError = "";
-            }
-            
+            if (GUILayout.Button("Preferences", EditorStyles.toolbarButton)) SettingsService.OpenUserPreferences("Preferences/ForgeAI");
+            if (GUILayout.Button("Clear", EditorStyles.toolbarButton)) agent.ClearHistory();
             GUILayout.EndHorizontal();
         }
 
@@ -82,56 +90,109 @@ namespace ForgeAI
         {
             scrollPosition = GUILayout.BeginScrollView(scrollPosition, GUILayout.ExpandHeight(true));
             
-            if (agent == null || agent.History.Count == 0)
+            if (agent == null || agent.Interactions.Count == 0)
             {
-                GUILayout.Label("Welcome to ForgeAI. Select a provider and enter your API Key to start.", EditorStyles.wordWrappedLabel);
+                GUILayout.Label("Welcome to ForgeAI.", EditorStyles.wordWrappedLabel);
             }
             else
             {
-                foreach (var msg in agent.History)
+                foreach (var interaction in agent.Interactions)
                 {
-                    // Filter out system messages from visual chat for cleaner UI
-                    if (msg.role == "system") continue;
-
-                    GUILayout.BeginVertical(EditorStyles.helpBox);
-                    
-                    // Simple styling
-                    if (msg.role == "user") 
-                    {
-                        GUILayout.Label($"<b>User:</b> {msg.content}", new GUIStyle(EditorStyles.wordWrappedLabel) { richText = true });
-                    }
-                    else if (msg.role == "assistant")
-                    {
-                        GUILayout.Label($"<b>AI:</b> {msg.content}", new GUIStyle(EditorStyles.wordWrappedLabel) { richText = true });
-                    }
-                    else
-                    {
-                        GUILayout.Label($"<i>{msg.role}: {msg.content}</i>", new GUIStyle(EditorStyles.wordWrappedLabel) { richText = true });
-                    }
-                    
-                    GUILayout.EndVertical();
-                    GUILayout.Space(5);
+                    DrawInteraction(interaction);
                 }
             }
 
             if (!string.IsNullOrEmpty(lastError))
             {
-                 GUILayout.BeginVertical(EditorStyles.helpBox);
-                 GUI.color = Color.red;
-                 GUILayout.Label($"Error: {lastError}", EditorStyles.wordWrappedLabel);
-                 GUI.color = Color.white;
-                 GUILayout.EndVertical();
+                 EditorGUILayout.HelpBox(lastError, MessageType.Error);
             }
             
             GUILayout.EndScrollView();
         }
 
+        private void DrawInteraction(ForgeInteraction interaction)
+        {
+            GUILayout.BeginVertical(EditorStyles.helpBox);
+            
+            // Header
+            GUILayout.BeginHorizontal();
+            var icon = interaction.IsExpanded ? EditorGUIUtility.IconContent("d_icon dropdown").image : EditorGUIUtility.IconContent("d_forward").image;
+            if (GUILayout.Button(icon, EditorStyles.label, GUILayout.Width(16), GUILayout.Height(16))) interaction.IsExpanded = !interaction.IsExpanded;
+            
+            if (GUILayout.Button(new GUIContent($"<b>User:</b> {interaction.UserPrompt}", "Click to toggle"), userPromptStyle)) interaction.IsExpanded = !interaction.IsExpanded;
+            
+            GUILayout.FlexibleSpace();
+            DrawStatus(interaction);
+            GUILayout.EndHorizontal();
+
+            // Body
+            if (interaction.IsExpanded)
+            {
+                GUILayout.Space(5);
+                
+                // AI Response Text
+                if (!string.IsNullOrEmpty(interaction.AIResponse))
+                {
+                    GUILayout.Label(interaction.AIResponse, EditorStyles.wordWrappedLabel);
+                }
+
+                // Proposed Action (Waiting for User)
+                if (interaction.ProposedAction != null && interaction.Status == "Waiting for Approval")
+                {
+                    GUILayout.Space(5);
+                    ForgeUI.DrawActionProposal(
+                        interaction.ProposedAction.tool, 
+                        interaction.ProposedAction.args,
+                        () => ApproveAction(),
+                        () => RejectAction()
+                    );
+                }
+
+                // Result
+                if (!string.IsNullOrEmpty(interaction.ActionResult))
+                {
+                    GUILayout.Space(5);
+                    GUILayout.Label("Observation:", EditorStyles.miniBoldLabel);
+                    GUILayout.Label(interaction.ActionResult, EditorStyles.wordWrappedMiniLabel);
+                }
+                
+                // Error
+                if (!string.IsNullOrEmpty(interaction.ErrorMessage))
+                {
+                    EditorGUILayout.HelpBox(interaction.ErrorMessage, MessageType.Error);
+                }
+            }
+
+            GUILayout.EndVertical();
+        }
+
+        private void DrawStatus(ForgeInteraction interaction)
+        {
+            string iconName = "d_WaitSpin00";
+            if (interaction.Status == "Completed" || interaction.Status == "Action Executed") iconName = "TestPassed";
+            else if (interaction.Status == "Error" || interaction.Status == "Action Rejected") iconName = "d_console.erroricon.sml";
+            else if (interaction.Status == "Waiting for Approval") iconName = "d_DebuggerAttached";
+
+            GUILayout.Label(new GUIContent(EditorGUIUtility.IconContent(iconName).image), GUILayout.Width(20));
+        }
+
+        private async void ApproveAction() => await agent.ApproveActionAsync();
+        private async void RejectAction() => await agent.RejectActionAsync();
+
         private void DrawInputArea()
         {
+            // Only draw input if we are NOT waiting for approval? 
+            // Actually, main UI allows input always, but logically we should block if pending.
+            // Let's block if pending to avoid state confusion.
+            if (agent.CurrentInteraction != null && agent.CurrentInteraction.ProposedAction != null)
+            {
+                GUILayout.Label("Waiting for action approval...", EditorStyles.centeredGreyMiniLabel);
+                return;
+            }
+
             GUI.enabled = !isProcessing;
             GUILayout.BeginHorizontal();
             
-            // Check for Enter key
             Event e = Event.current;
             bool enterPressed = e.type == EventType.KeyDown && (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter);
             
@@ -142,22 +203,20 @@ namespace ForgeAI
                 if (!string.IsNullOrEmpty(prompt))
                 {
                     SendPrompt();
-                    e.Use(); // Consume event to prevent double firing
+                    e.Use();
                 }
             }
             GUILayout.EndHorizontal();
             GUI.enabled = true;
-            EditorGUILayout.Space(5);
+            GUILayout.Space(5);
         }
 
         private async void SendPrompt()
         {
             if (agent == null) OnEnable();
-            
             string currentPrompt = prompt;
             prompt = "";
-            lastError = ""; // Clear previous errors on new request
-            
+            lastError = "";
             ForgeLogger.StartNewSession();
             await agent.ChatAsync(currentPrompt);
         }

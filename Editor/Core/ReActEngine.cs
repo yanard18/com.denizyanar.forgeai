@@ -40,6 +40,17 @@ namespace ForgeAI
             initialized = true;
         }
 
+        public static bool RequiresApproval(string toolName)
+        {
+            Initialize();
+            if (availableTools.TryGetValue(toolName, out var info))
+            {
+                var attr = info.Method.GetCustomAttribute<ForgeToolAttribute>();
+                return attr != null && attr.RequiresApproval;
+            }
+            return true; // Safety default
+        }
+
         public static string GetSystemPrompt()
         {
             Initialize();
@@ -83,14 +94,19 @@ namespace ForgeAI
 
         public static string ExecuteTool(string jsonAction)
         {
+            var action = ParseToolAction(jsonAction);
+            if (action == null) return "Error: Could not parse action.";
+            return ExecuteTool(action);
+        }
+
+        public static string ExecuteTool(ToolAction action)
+        {
             Initialize();
             try
             {
-                var action = ParseToolAction(jsonAction);
-                
                 if (action == null || string.IsNullOrEmpty(action.tool))
                 {
-                    return "Error: Could not parse action from response.";
+                    return "Error: Invalid tool action.";
                 }
 
                 ForgeLogger.Log("ToolExecution", $"Invoking {action.tool}", $"Args: {string.Join(", ", action.args)}");
@@ -137,7 +153,7 @@ namespace ForgeAI
             }
         }
 
-        private class ToolAction
+        public class ToolAction
         {
             public string tool;
             public string[] args;
@@ -147,7 +163,7 @@ namespace ForgeAI
         /// A robust, dependency-free parser that tolerates common LLM JSON errors 
         /// (single quotes, mixed types, trailing commas).
         /// </summary>
-        private static ToolAction ParseToolAction(string json)
+        public static ToolAction ParseToolAction(string json)
         {
             var action = new ToolAction();
             

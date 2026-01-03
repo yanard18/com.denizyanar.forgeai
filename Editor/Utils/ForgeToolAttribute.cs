@@ -7,11 +7,15 @@ namespace ForgeAI
     {
         public string Description { get; }
         public string ParameterHints { get; }
+        public bool RequiresApproval { get; }
+        public bool SupportsUndo { get; }
 
-        public ForgeToolAttribute(string description, string parameterHints = "")
+        public ForgeToolAttribute(string description, string parameterHints = "", bool requiresApproval = true, bool supportsUndo = false)
         {
             Description = description;
             ParameterHints = parameterHints;
+            RequiresApproval = requiresApproval;
+            SupportsUndo = supportsUndo;
         }
     }
 }
