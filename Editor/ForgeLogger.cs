@@ -15,16 +15,23 @@ namespace ForgeAI
             public string details;
         }
 
-        private static string GetLogPath()
+        private static string _currentLogFilePath;
+
+        public static void StartNewSession()
         {
-            // Project Root/Logs/ForgeAI/
+            // Project Root/Logs/ForgeAI/yyyy-MM-dd/
             string root = Path.GetDirectoryName(Application.dataPath);
-            string dir = Path.Combine(root, "Logs", "ForgeAI");
+            string dateFolder = DateTime.Now.ToString("yyyy-MM-dd");
+            string dir = Path.Combine(root, "Logs", "ForgeAI", dateFolder);
+            
             if (!Directory.Exists(dir))
             {
                 Directory.CreateDirectory(dir);
             }
-            return Path.Combine(dir, $"{DateTime.Now:yyyy-MM-dd}.jsonl");
+
+            // File format: HH-mm-ss_Request.log
+            string timestamp = DateTime.Now.ToString("HH-mm-ss");
+            _currentLogFilePath = Path.Combine(dir, $"{timestamp}_Request.log");
         }
 
         public static void Log(string step, string content, string details = "")
@@ -33,24 +40,30 @@ namespace ForgeAI
 
             try
             {
-                var entry = new LogEntry
+                // Ensure we have a valid log file path (fallback if StartNewSession wasn't called explicitely)
+                if (string.IsNullOrEmpty(_currentLogFilePath))
                 {
-                    timestamp = DateTime.Now.ToString("HH:mm:ss.fff"),
-                    step = step,
-                    content = content,
-                    details = details
-                };
+                    StartNewSession();
+                }
 
-                // Minimal JSON formatting
-                string json = JsonUtility.ToJson(entry);
-                string path = GetLogPath();
+                var sb = new System.Text.StringBuilder();
+
+                sb.AppendLine($"[{DateTime.Now:HH:mm:ss.fff}] [{step}]");
+                sb.AppendLine(content);
                 
-                // Append line
-                File.AppendAllText(path, json + Environment.NewLine);
+                if (!string.IsNullOrEmpty(details))
+                {
+                    sb.AppendLine("--- Details ---");
+                    sb.AppendLine(details);
+                }
+                
+                sb.AppendLine("------------------------------------------------------------------------------------------------");
+                sb.AppendLine();
+
+                File.AppendAllText(_currentLogFilePath, sb.ToString());
             }
             catch (Exception e)
             {
-                // Fallback to console if logging fails, to warn the user
                 Debug.LogWarning($"[ForgeAI] Logging failed: {e.Message}");
             }
         }

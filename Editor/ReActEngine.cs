@@ -71,8 +71,10 @@ namespace ForgeAI
             
             if (match.Success)
             {
+                ForgeLogger.Log("ActionParsing", "Extracted JSON Action", match.Value);
                 return match.Value;
             }
+            ForgeLogger.Log("ActionParsing", "No Action JSON found in response");
             return null;
         }
 
@@ -106,14 +108,20 @@ namespace ForgeAI
                         invokeArgs[i] = Convert.ChangeType(action.args[i], paramType);
                     }
 
-                    return (string)toolInfo.Method.Invoke(null, invokeArgs);
+                    string result = (string)toolInfo.Method.Invoke(null, invokeArgs);
+                    ForgeLogger.Log("ToolResult", $"Result of {action.tool}", result);
+                    return result;
                 }
                 
-                return $"Error: Tool '{action.tool}' not found.";
+                string notFoundMsg = $"Error: Tool '{action.tool}' not found.";
+                ForgeLogger.Log("ToolError", "Tool Not Found", notFoundMsg);
+                return notFoundMsg;
             }
             catch (Exception e)
             {
-                return $"Error executing tool: {e.Message}";
+                string errorMsg = $"Error executing tool: {e.Message}";
+                ForgeLogger.Log("ToolError", "Exception", errorMsg);
+                return errorMsg;
             }
         }
 

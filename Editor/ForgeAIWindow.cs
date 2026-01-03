@@ -10,7 +10,7 @@ namespace ForgeAI
         private System.Collections.Generic.List<string> chatHistory = new System.Collections.Generic.List<string>();
         private bool isProcessing = false;
 
-        [MenuItem("Window/ForgeAI Assistant")]
+        [MenuItem("Window/ForgeAI Assistant #&f")]
         public static void ShowWindow()
         {
             GetWindow<ForgeAIWindow>("ForgeAI");
@@ -88,6 +88,8 @@ namespace ForgeAI
 
         private async void ProcessUserRequest(string userPrompt)
         {
+            ForgeLogger.StartNewSession();
+
             if (conversation.Count == 0)
             {
                 conversation.Add(new ChatMessage { role = "system", content = ReActEngine.GetSystemPrompt() });
