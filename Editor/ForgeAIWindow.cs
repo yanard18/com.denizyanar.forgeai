@@ -9,11 +9,51 @@ namespace ForgeAI
         private Vector2 scrollPosition;
         private System.Collections.Generic.List<string> chatHistory = new System.Collections.Generic.List<string>();
         private bool isProcessing = false;
+        private ForgeAgent agent;
 
         [MenuItem("Window/ForgeAI Assistant #&f")]
         public static void ShowWindow()
         {
             GetWindow<ForgeAIWindow>("ForgeAI");
+        }
+
+        private void OnEnable()
+        {
+            if (agent == null)
+            {
+                agent = new ForgeAgent();
+                agent.OnMessageReceived += HandleMessage;
+                agent.OnProcessingStateChanged += HandleProcessingState;
+                agent.OnError += HandleError;
+            }
+        }
+
+        private void OnDisable()
+        {
+            if (agent != null)
+            {
+                agent.OnMessageReceived -= HandleMessage;
+                agent.OnProcessingStateChanged -= HandleProcessingState;
+                agent.OnError -= HandleError;
+            }
+        }
+
+        private void HandleMessage(string role, string content)
+        {
+            chatHistory.Add($"{role}: {content}");
+            Repaint();
+        }
+
+        private void HandleProcessingState(bool processing)
+        {
+            isProcessing = processing;
+            Repaint();
+        }
+
+        private void HandleError(string error)
+        {
+            chatHistory.Add($"Error: {error}");
+            Repaint();
         }
 
         private void OnGUI()
@@ -38,7 +78,7 @@ namespace ForgeAI
             if (GUILayout.Button("Clear Chat", EditorStyles.toolbarButton))
             {
                 chatHistory.Clear();
-                conversation.Clear();
+                agent.ClearHistory();
             }
             
             GUILayout.EndHorizontal();
@@ -66,8 +106,6 @@ namespace ForgeAI
             GUILayout.EndScrollView();
         }
 
-        private System.Collections.Generic.List<ChatMessage> conversation = new System.Collections.Generic.List<ChatMessage>();
-
         private void DrawInputArea()
         {
             GUI.enabled = !isProcessing;
@@ -77,8 +115,7 @@ namespace ForgeAI
             {
                 if (!string.IsNullOrEmpty(prompt))
                 {
-                    ProcessUserRequest(prompt);
-                    prompt = "";
+                    SendPrompt();
                 }
             }
             GUILayout.EndHorizontal();
@@ -86,73 +123,15 @@ namespace ForgeAI
             EditorGUILayout.Space(5);
         }
 
-        private async void ProcessUserRequest(string userPrompt)
+        private async void SendPrompt()
         {
-            ForgeLogger.StartNewSession();
-
-            if (conversation.Count == 0)
-            {
-                conversation.Add(new ChatMessage { role = "system", content = ReActEngine.GetSystemPrompt() });
-            }
-
-            conversation.Add(new ChatMessage { role = "user", content = userPrompt });
-            chatHistory.Add("User: " + userPrompt);
-            ForgeLogger.Log("User", userPrompt);
+            if (agent == null) OnEnable(); // Safety check
             
-            isProcessing = true;
-            Repaint();
-
-            try
-            {
-                const int maxSteps = 5;
-                var step = 0;
-
-                while (step < maxSteps)
-                {
-                    var response = await LLMClient.SendRequest(conversation);
-                    
-                    if (response.StartsWith("Error:"))
-                    {
-                        chatHistory.Add("System: " + response);
-                        ForgeLogger.Log("Error", response);
-                        break;
-                    }
-
-                    conversation.Add(new ChatMessage { role = "assistant", content = response });
-                    chatHistory.Add("AI: " + response);
-                    ForgeLogger.Log("AI", response);
-                    
-                    var jsonAction = ReActEngine.ExtractActionJson(response);
-                    if (!string.IsNullOrEmpty(jsonAction))
-                    {
-                        chatHistory.Add("System: Executing tool...");
-                        var observation = ReActEngine.ExecuteTool(jsonAction);
-                        chatHistory.Add("Observation: " + observation);
-                        ForgeLogger.Log("Observation", observation, "Action: " + jsonAction);
-                        
-                        conversation.Add(new ChatMessage { role = "user", content = "Observation: " + observation });
-                    }
-                    else
-                    {
-                        break;
-                    }
-                    
-                    step++;
-                    Repaint();
-                    await System.Threading.Tasks.Task.Yield();
-                }
-            }
-            catch (System.Exception e)
-            {
-                chatHistory.Add("Critical Error: " + e.Message);
-                ForgeLogger.Log("Exception", e.Message, e.StackTrace);
-                Debug.LogException(e);
-            }
-            finally
-            {
-                isProcessing = false;
-                Repaint();
-            }
+            string currentPrompt = prompt;
+            prompt = ""; // Clear input immediately
+            
+            ForgeLogger.StartNewSession();
+            await agent.ChatAsync(currentPrompt);
         }
     }
 }
