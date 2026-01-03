@@ -14,7 +14,6 @@ namespace ForgeAI
         public IReadOnlyList<ForgeInteraction> Interactions => interactions;
         public ForgeInteraction CurrentInteraction => interactions.LastOrDefault();
         
-        // Events
         public event Action OnHistoryChanged; 
         public event Action<bool> OnProcessingStateChanged;
         public event Action<string> OnError;
@@ -32,7 +31,6 @@ namespace ForgeAI
         {
             if (string.IsNullOrWhiteSpace(userPrompt)) return;
 
-            // Start new interaction
             var interaction = new ForgeInteraction(userPrompt);
             interactions.Add(interaction);
             OnHistoryChanged?.Invoke();
@@ -43,18 +41,22 @@ namespace ForgeAI
         public async Task ApproveActionAsync()
         {
             var interaction = CurrentInteraction;
-            if (interaction == null || interaction.ProposedAction == null) return;
+            if (interaction == null || interaction.ProposedActions.Count == 0) return;
 
             NotifyProcessing(true);
             try
             {
-                // Execute Tool
-                var observation = ReActEngine.ExecuteTool(interaction.ProposedAction);
-                interaction.ActionResult = observation;
-                interaction.Status = "Action Executed";
-                interaction.ProposedAction = null; // Clear pending
+                interaction.ActionResults.Clear();
+                foreach (var action in interaction.ProposedActions)
+                {
+                    var observation = ReActEngine.ExecuteTool(action);
+                    interaction.ActionResults.Add(observation);
+                }
 
-                // Continue loop with observation
+                interaction.Status = "Action Executed";
+                interaction.ProposedActions.Clear(); // Clear pending
+
+                // Continue loop with combined observation
                 await RunReActLoop(interaction, 0); 
             }
             catch (Exception e)
@@ -66,15 +68,15 @@ namespace ForgeAI
         public async Task RejectActionAsync()
         {
             var interaction = CurrentInteraction;
-            if (interaction == null || interaction.ProposedAction == null) return;
+            if (interaction == null || interaction.ProposedActions.Count == 0) return;
 
             NotifyProcessing(true);
             try
             {
-                string msg = "User rejected the action.";
-                interaction.ActionResult = msg;
+                string msg = "User rejected the plan.";
+                interaction.ActionResults.Add(msg);
                 interaction.Status = "Action Rejected";
-                interaction.ProposedAction = null;
+                interaction.ProposedActions.Clear();
 
                 await RunReActLoop(interaction, 0);
             }
@@ -93,9 +95,10 @@ namespace ForgeAI
             {
                 while (step < MAX_STEPS)
                 {
-                    // Build Context from ALL interactions + current partial state
-                    var context = BuildContext(current);
+                    // Clear previous turn's proposed actions
+                    current.ProposedActions.Clear();
 
+                    var context = BuildContext(current);
                     string response = await LLMClient.SendRequest(context);
 
                     if (response.StartsWith("Error:"))
@@ -106,38 +109,45 @@ namespace ForgeAI
                         break;
                     }
 
-                    // Update current interaction with latest thought/response
                     current.AIResponse = response; 
                     OnHistoryChanged?.Invoke();
 
-                    // Check for Tool Action
-                    var jsonAction = ReActEngine.ExtractActionJson(response);
-                    if (!string.IsNullOrEmpty(jsonAction))
+                    // Check for Tool Actions (Plural)
+                    var actions = ReActEngine.ExtractAllActions(response);
+                    
+                    if (actions.Count > 0)
                     {
-                        var action = ReActEngine.ParseToolAction(jsonAction);
-                        if (action != null && !string.IsNullOrEmpty(action.tool))
+                        current.ProposedActions = actions;
+
+                        // Check if ANY action needs approval
+                        bool needsApproval = false;
+                        foreach (var act in actions)
                         {
-                            bool needsApproval = ReActEngine.RequiresApproval(action.tool);
+                            if (ReActEngine.RequiresApproval(act.tool))
+                            {
+                                needsApproval = true;
+                                break;
+                            }
+                        }
+                        
+                        if (needsApproval)
+                        {
+                            current.Status = "Waiting for Approval";
+                            NotifyProcessing(false);
+                            OnActionProposed?.Invoke();
+                            return; // PAUSE
+                        }
+                        else
+                        {
+                            // Auto-execute batch
+                            current.ActionResults.Clear();
+                            foreach (var act in actions)
+                            {
+                                var obs = ReActEngine.ExecuteTool(act);
+                                current.ActionResults.Add(obs);
+                            }
                             
-                            if (needsApproval)
-                            {
-                                current.ProposedAction = action;
-                                current.Status = "Waiting for Approval";
-                                NotifyProcessing(false);
-                                OnActionProposed?.Invoke();
-                                return; // PAUSE
-                            }
-                            else
-                            {
-                                // Auto-execute
-                                var observation = ReActEngine.ExecuteTool(action);
-                                current.ActionResult = observation; // Store result
-                                
-                                // In a multi-step loop, we append this to context. 
-                                // Ideally, ForgeInteraction should support a LIST of steps.
-                                // For simplicity/MVP: We overwrite ActionResult and continue.
-                                // To fix context loss: We append the Observation to the context in the next loop.
-                            }
+                            // Loop continues automatically with observations
                         }
                     }
                     else
@@ -168,30 +178,38 @@ namespace ForgeAI
 
             foreach (var i in interactions)
             {
-                if (i == current) continue; // Handle current separately
+                if (i == current) continue;
 
                 msgs.Add(new ChatMessage { role = "user", content = i.UserPrompt });
                 if (!string.IsNullOrEmpty(i.AIResponse))
                 {
                     msgs.Add(new ChatMessage { role = "assistant", content = i.AIResponse });
                 }
-                if (!string.IsNullOrEmpty(i.ActionResult))
+                if (i.ActionResults.Count > 0)
                 {
-                    msgs.Add(new ChatMessage { role = "user", content = "Observation: " + i.ActionResult });
+                    string combinedObs = string.Join("\n", i.ActionResults);
+                    msgs.Add(new ChatMessage { role = "user", content = "Observations:\n" + combinedObs });
                 }
             }
 
-            // Add current
+            // Add current state
             msgs.Add(new ChatMessage { role = "user", content = current.UserPrompt });
-            // If we are mid-loop (e.g. resuming after rejection), we need to handle that state.
-            // Complex state reconstruction omitted for brevity, assuming linear flow for now.
-            if (!string.IsNullOrEmpty(current.ActionResult))
+            
+            // If we are mid-loop (e.g. have previous results from a batch but loop continued)
+            // But Wait! My RunReActLoop logic clears ActionResults on new execution?
+            // Actually, if we loop, we want to append the PREVIOUS results to the context.
+            // My current logic accumulates ActionResults in the Interaction.
+            // If step > 0, we imply there was a previous turn.
+            // For simplicity, the `current` interaction represents the *latest* turn.
+            
+            if (current.ActionResults.Count > 0)
             {
-                 // If we have a result but are continuing, it means we did an action.
+                 // If we have results, it means we executed tools.
                  if (!string.IsNullOrEmpty(current.AIResponse))
                     msgs.Add(new ChatMessage { role = "assistant", content = current.AIResponse });
                  
-                 msgs.Add(new ChatMessage { role = "user", content = "Observation: " + current.ActionResult });
+                 string combinedObs = string.Join("\n", current.ActionResults);
+                 msgs.Add(new ChatMessage { role = "user", content = "Observations:\n" + combinedObs });
             }
 
             return msgs;

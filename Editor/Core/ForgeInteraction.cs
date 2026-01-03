@@ -8,11 +8,12 @@ namespace ForgeAI
         public string UserPrompt;
         public string Status; // "Thinking", "Waiting for Approval", "Completed", "Error", "Aborted"
         public string AIResponse; // The text reply
-        public ReActEngine.ToolAction ProposedAction;
-        public string ActionResult; // Result of the tool
-        public bool IsExpanded = true;
         
-        // Error handling
+        // Multi-Action Support
+        public List<ReActEngine.ToolAction> ProposedActions = new List<ReActEngine.ToolAction>();
+        public List<string> ActionResults = new List<string>(); // Corresponds to ProposedActions
+        
+        public bool IsExpanded = true;
         public string ErrorMessage;
 
         public ForgeInteraction(string prompt)
@@ -20,5 +21,9 @@ namespace ForgeAI
             UserPrompt = prompt;
             Status = "Thinking";
         }
+
+        // Helper for single action backward compat or easy access
+        public ReActEngine.ToolAction FirstAction => ProposedActions.Count > 0 ? ProposedActions[0] : null;
+        public string CombinedResult => string.Join("\n", ActionResults);
     }
 }

@@ -10,15 +10,10 @@ namespace ForgeAI
         private bool isProcessing = false;
         private ForgeAgent agent;
         private string lastError = "";
-
-        // Styles
         private GUIStyle userPromptStyle;
 
         [MenuItem("Window/ForgeAI Assistant #&f")]
-        public static void ShowWindow()
-        {
-            GetWindow<ForgeAIWindow>("ForgeAI");
-        }
+        public static void ShowWindow() => GetWindow<ForgeAIWindow>("ForgeAI");
 
         private void OnEnable()
         {
@@ -56,25 +51,9 @@ namespace ForgeAI
             }
         }
 
-        private void HandleProcessingState(bool processing)
-        {
-            isProcessing = processing;
-            Repaint();
-        }
-
-        private void HandleError(string error)
-        {
-            lastError = error;
-            Repaint();
-        }
-
-        private void OnGUI()
-        {
-            InitStyles();
-            DrawToolbar();
-            DrawChatArea();
-            DrawInputArea();
-        }
+        private void HandleProcessingState(bool processing) { isProcessing = processing; Repaint(); }
+        private void HandleError(string error) { lastError = error; Repaint(); }
+        private void OnGUI() { InitStyles(); DrawToolbar(); DrawChatArea(); DrawInputArea(); }
 
         private void DrawToolbar()
         {
@@ -102,11 +81,7 @@ namespace ForgeAI
                 }
             }
 
-            if (!string.IsNullOrEmpty(lastError))
-            {
-                 EditorGUILayout.HelpBox(lastError, MessageType.Error);
-            }
-            
+            if (!string.IsNullOrEmpty(lastError)) EditorGUILayout.HelpBox(lastError, MessageType.Error);
             GUILayout.EndScrollView();
         }
 
@@ -118,9 +93,7 @@ namespace ForgeAI
             GUILayout.BeginHorizontal();
             var icon = interaction.IsExpanded ? EditorGUIUtility.IconContent("d_icon dropdown").image : EditorGUIUtility.IconContent("d_forward").image;
             if (GUILayout.Button(icon, EditorStyles.label, GUILayout.Width(16), GUILayout.Height(16))) interaction.IsExpanded = !interaction.IsExpanded;
-            
             if (GUILayout.Button(new GUIContent($"<b>User:</b> {interaction.UserPrompt}", "Click to toggle"), userPromptStyle)) interaction.IsExpanded = !interaction.IsExpanded;
-            
             GUILayout.FlexibleSpace();
             DrawStatus(interaction);
             GUILayout.EndHorizontal();
@@ -130,7 +103,7 @@ namespace ForgeAI
             {
                 GUILayout.Space(5);
                 
-                // AI Response Text
+                // AI Response
                 if (!string.IsNullOrEmpty(interaction.AIResponse))
                 {
                     if (GUILayout.Button(new GUIContent(interaction.AIResponse, "Click to Copy"), EditorStyles.wordWrappedLabel))
@@ -140,33 +113,45 @@ namespace ForgeAI
                     }
                 }
 
-                // Proposed Action (Waiting for User)
-                if (interaction.ProposedAction != null && interaction.Status == "Waiting for Approval")
+                // Proposed Actions (Batch)
+                if (interaction.ProposedActions.Count > 0 && interaction.Status == "Waiting for Approval")
                 {
+                    GUILayout.Space(10);
+                    GUILayout.BeginVertical(EditorStyles.helpBox);
+                    GUILayout.Label($"Proposed Plan ({interaction.ProposedActions.Count} actions)", EditorStyles.boldLabel);
+                    
+                    foreach(var action in interaction.ProposedActions)
+                    {
+                        GUILayout.BeginHorizontal();
+                        GUILayout.Label("•", GUILayout.Width(10));
+                        GUILayout.Label($"<b>{action.tool}</b>: {string.Join(", ", action.args)}", new GUIStyle(EditorStyles.label) { richText = true, wordWrap = true });
+                        GUILayout.EndHorizontal();
+                    }
+
                     GUILayout.Space(5);
-                    ForgeUI.DrawActionProposal(
-                        interaction.ProposedAction.tool, 
-                        interaction.ProposedAction.args,
-                        () => ApproveAction(),
-                        () => RejectAction()
-                    );
+                    GUILayout.BeginHorizontal();
+                    GUI.backgroundColor = new Color(0.6f, 1f, 0.6f);
+                    if (GUILayout.Button("Approve Plan", GUILayout.Height(30))) ApproveAction();
+                    GUI.backgroundColor = new Color(1f, 0.6f, 0.6f);
+                    if (GUILayout.Button("Reject Plan", GUILayout.Height(30))) RejectAction();
+                    GUI.backgroundColor = Color.white;
+                    GUILayout.EndHorizontal();
+                    GUILayout.EndVertical();
                 }
 
-                // Result
-                if (!string.IsNullOrEmpty(interaction.ActionResult))
+                // Results
+                if (interaction.ActionResults.Count > 0)
                 {
                     GUILayout.Space(5);
-                    GUILayout.Label("Observation:", EditorStyles.miniBoldLabel);
-                    GUILayout.Label(interaction.ActionResult, EditorStyles.wordWrappedMiniLabel);
+                    GUILayout.Label("Observations:", EditorStyles.miniBoldLabel);
+                    foreach(var res in interaction.ActionResults)
+                    {
+                        GUILayout.Label($"• {res}", EditorStyles.wordWrappedMiniLabel);
+                    }
                 }
                 
-                // Error
-                if (!string.IsNullOrEmpty(interaction.ErrorMessage))
-                {
-                    EditorGUILayout.HelpBox(interaction.ErrorMessage, MessageType.Error);
-                }
+                if (!string.IsNullOrEmpty(interaction.ErrorMessage)) EditorGUILayout.HelpBox(interaction.ErrorMessage, MessageType.Error);
             }
-
             GUILayout.EndVertical();
         }
 
@@ -176,7 +161,6 @@ namespace ForgeAI
             if (interaction.Status == "Completed" || interaction.Status == "Action Executed") iconName = "TestPassed";
             else if (interaction.Status == "Error" || interaction.Status == "Action Rejected") iconName = "d_console.erroricon.sml";
             else if (interaction.Status == "Waiting for Approval") iconName = "d_DebuggerAttached";
-
             GUILayout.Label(new GUIContent(EditorGUIUtility.IconContent(iconName).image), GUILayout.Width(20));
         }
 
@@ -185,10 +169,7 @@ namespace ForgeAI
 
         private void DrawInputArea()
         {
-            // Only draw input if we are NOT waiting for approval? 
-            // Actually, main UI allows input always, but logically we should block if pending.
-            // Let's block if pending to avoid state confusion.
-            if (agent.CurrentInteraction != null && agent.CurrentInteraction.ProposedAction != null)
+            if (agent.CurrentInteraction != null && agent.CurrentInteraction.Status == "Waiting for Approval")
             {
                 GUILayout.Label("Waiting for action approval...", EditorStyles.centeredGreyMiniLabel);
                 return;
@@ -196,19 +177,12 @@ namespace ForgeAI
 
             GUI.enabled = !isProcessing;
             GUILayout.BeginHorizontal();
-            
             Event e = Event.current;
             bool enterPressed = e.type == EventType.KeyDown && (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter);
-            
             prompt = EditorGUILayout.TextField(prompt, GUILayout.Height(40));
-            
             if (GUILayout.Button("Send", GUILayout.Width(60), GUILayout.Height(40)) || (enterPressed && !string.IsNullOrWhiteSpace(prompt)))
             {
-                if (!string.IsNullOrEmpty(prompt))
-                {
-                    SendPrompt();
-                    e.Use();
-                }
+                if (!string.IsNullOrEmpty(prompt)) { SendPrompt(); e.Use(); }
             }
             GUILayout.EndHorizontal();
             GUI.enabled = true;

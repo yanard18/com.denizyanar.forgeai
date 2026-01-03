@@ -109,7 +109,7 @@ namespace ForgeAI
             catch (System.Exception e) { return $"Error: {e.Message}"; }
         }
 
-        [ForgeTool("Replaces a specific text block in a file with new text. Use for targeted edits.", "path:string, oldText:string, newText:string")]
+        [ForgeTool("Replaces a specific text block in a file with new text. REQUIREMENT: oldText must match exactly.", "path:string, oldText:string, newText:string")]
         public static string ReplaceText(string path, string oldText, string newText)
         {
             path = NormalizePath(path);

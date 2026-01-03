@@ -16,7 +16,7 @@ namespace ForgeAI
             public string ParameterHints;
         }
 
-        private static Dictionary<string, ToolInfo> availableTools = new Dictionary<string, ToolInfo>();
+        private static Dictionary<string, ToolInfo> availableTools = new Dictionary<string, ToolInfo>(StringComparer.OrdinalIgnoreCase);
         private static bool initialized = false;
 
         public static void Initialize()
@@ -66,14 +66,18 @@ namespace ForgeAI
             }
 
             sb.AppendLine("");
-            sb.AppendLine("To use a tool, your response MUST contain a JSON block like this:");
-            sb.AppendLine("```json");
-            sb.AppendLine("{ \"tool\": \"ToolName\", \"args\": [\"arg1\", \"arg2\"] }");
-            sb.AppendLine("```");
-            sb.AppendLine("You can output MULTIPLE tool blocks in one response if you need to perform a batch of actions.");
-            sb.AppendLine("Do not use tools if you can answer directly.");
-            sb.AppendLine("When you receive an Observation, analyze it and decide the next step.");
-            sb.AppendLine("IMPORTANT: If you decide to perform an action, you MUST output the JSON tool call IMMEDIATELY. Do not describe the plan without generating the tool JSON.");
+            sb.AppendLine("### Guidelines:");
+            sb.AppendLine("1. **ReAct Pattern**: Always Reason before Acting. Use the format:");
+            sb.AppendLine("   Thought: [Your analysis of the state and what needs to be done]");
+            sb.AppendLine("   ```json");
+            sb.AppendLine("   { \"tool\": \"ToolName\", \"args\": [\"arg1\", \"arg2\"] }");
+            sb.AppendLine("   ```");
+            sb.AppendLine("2. **File Editing**: When using `ReplaceText`, you MUST ensure `oldText` matches the file content EXACTLY (including whitespace). ALWAYS `ReadFile` before editing to get the exact string.");
+            sb.AppendLine("3. **Path Safety**: Do not guess file paths. Use `ListFiles` to explore if you are unsure.");
+            sb.AppendLine("4. **Batching**: You can output MULTIPLE tool blocks in one response to perform actions in sequence.");
+            sb.AppendLine("5. **Completion**: If you can answer the user's request directly or have finished the task, simply provide the final answer without a tool block.");
+            sb.AppendLine("");
+            sb.AppendLine("Begin!");
             
             return sb.ToString();
         }
@@ -216,7 +220,7 @@ namespace ForgeAI
                 action.tool = toolMatch.Groups[1].Value;
             }
 
-            var argsStartMatch = Regex.Match(json, @"[""']args[""']\s*:\s*[""']");
+            var argsStartMatch = Regex.Match(json, @"[""']args[""']\s*:\s*\[");
             if (argsStartMatch.Success)
             {
                 int arrayStartIndex = argsStartMatch.Index + argsStartMatch.Length;
