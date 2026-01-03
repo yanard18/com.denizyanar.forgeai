@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Reflection;
+using UnityEditor;
 using UnityEngine;
 
 namespace ForgeAI
@@ -22,15 +22,14 @@ namespace ForgeAI
         {
             if (initialized) return;
 
-            var methods = AppDomain.CurrentDomain.GetAssemblies()
-                .SelectMany(a => a.GetTypes())
-                .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Static))
-                .Where(m => m.GetCustomAttributes(typeof(ForgeToolAttribute), false).Length > 0);
+            var methods = TypeCache.GetMethodsWithAttribute<ForgeToolAttribute>();
 
             availableTools.Clear();
             foreach (var method in methods)
             {
-                var attr = (ForgeToolAttribute)method.GetCustomAttributes(typeof(ForgeToolAttribute), false)[0];
+                if (!method.IsStatic || !method.IsPublic) continue;
+
+                var attr = method.GetCustomAttribute<ForgeToolAttribute>();
                 availableTools[method.Name] = new ToolInfo
                 {
                     Method = method,
@@ -67,17 +66,12 @@ namespace ForgeAI
 
         public static string ExtractActionJson(string response)
         {
-            int startIndex = response.IndexOf("{");
-            int endIndex = response.LastIndexOf("}");
-
-            if (startIndex >= 0 && endIndex > startIndex)
+            // Non-greedy match for a JSON object containing a "tool" property
+            var match = System.Text.RegularExpressions.Regex.Match(response, @"\{[^{}]*?""tool""[^{}]*?\}", System.Text.RegularExpressions.RegexOptions.Singleline);
+            
+            if (match.Success)
             {
-                // Basic check to see if it looks like our tool action
-                string jsonCandidate = response.Substring(startIndex, endIndex - startIndex + 1);
-                if (jsonCandidate.Contains("\"tool\""))
-                {
-                    return jsonCandidate;
-                }
+                return match.Value;
             }
             return null;
         }

@@ -26,42 +26,22 @@ namespace ForgeAI
         private void DrawToolbar()
         {
             GUILayout.BeginHorizontal(EditorStyles.toolbar);
-            GUILayout.Label("ForgeAI Settings", EditorStyles.boldLabel);
+            GUILayout.Label("ForgeAI", EditorStyles.boldLabel);
             
-            ForgeAISettings.instance.provider = (AIProvider)EditorGUILayout.EnumPopup(ForgeAISettings.instance.provider, EditorStyles.toolbarPopup, GUILayout.Width(100));
+            GUILayout.FlexibleSpace();
             
-            if (GUILayout.Button("Save Config", EditorStyles.toolbarButton))
+            if (GUILayout.Button("Preferences", EditorStyles.toolbarButton))
             {
-                ForgeAISettings.instance.Save();
+                SettingsService.OpenUserPreferences("Preferences/ForgeAI");
             }
-            
+
             if (GUILayout.Button("Clear Chat", EditorStyles.toolbarButton))
             {
                 chatHistory.Clear();
                 conversation.Clear();
             }
             
-            GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
-
-            // API Key field
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("API Key:", GUILayout.Width(60));
-            string currentKey = ForgeAISettings.instance.GetApiKey();
-            string newKey = EditorGUILayout.PasswordField(currentKey);
-            if (newKey != currentKey)
-            {
-                ForgeAISettings.instance.SetApiKey(newKey);
-            }
-            GUILayout.EndHorizontal();
-            
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Model:", GUILayout.Width(60));
-            ForgeAISettings.instance.ModelName = EditorGUILayout.TextField(ForgeAISettings.instance.ModelName);
-            GUILayout.EndHorizontal();
-            
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("", GUI.skin.horizontalSlider);
         }
 
         private void DrawChatArea()
@@ -117,49 +97,55 @@ namespace ForgeAI
             chatHistory.Add("User: " + userPrompt);
             
             isProcessing = true;
-            Repaint(); // Update UI immediately
-
-            int maxSteps = 5;
-            int step = 0;
-
-            while (step < maxSteps)
-            {
-                string response = await LLMClient.SendRequest(conversation);
-                
-                // Check for errors (simple check, robust app needs better error handling)
-                if (response.StartsWith("Error:"))
-                {
-                    chatHistory.Add("System: " + response);
-                    break;
-                }
-
-                conversation.Add(new ChatMessage { role = "assistant", content = response });
-                chatHistory.Add("AI: " + response);
-                
-                string jsonAction = ReActEngine.ExtractActionJson(response);
-                if (!string.IsNullOrEmpty(jsonAction))
-                {
-                    chatHistory.Add("System: Executing tool...");
-                    string observation = ReActEngine.ExecuteTool(jsonAction);
-                    chatHistory.Add("Observation: " + observation);
-                    
-                    // Feed observation back to AI
-                    conversation.Add(new ChatMessage { role = "user", content = "Observation: " + observation });
-                }
-                else
-                {
-                    // No tool used, final answer
-                    break;
-                }
-                
-                step++;
-                Repaint();
-                // Small delay to prevent UI freeze if API is super fast (unlikely)
-                await System.Threading.Tasks.Task.Yield();
-            }
-
-            isProcessing = false;
             Repaint();
+
+            try
+            {
+                int maxSteps = 5;
+                int step = 0;
+
+                while (step < maxSteps)
+                {
+                    string response = await LLMClient.SendRequest(conversation);
+                    
+                    if (response.StartsWith("Error:"))
+                    {
+                        chatHistory.Add("System: " + response);
+                        break;
+                    }
+
+                    conversation.Add(new ChatMessage { role = "assistant", content = response });
+                    chatHistory.Add("AI: " + response);
+                    
+                    string jsonAction = ReActEngine.ExtractActionJson(response);
+                    if (!string.IsNullOrEmpty(jsonAction))
+                    {
+                        chatHistory.Add("System: Executing tool...");
+                        string observation = ReActEngine.ExecuteTool(jsonAction);
+                        chatHistory.Add("Observation: " + observation);
+                        
+                        conversation.Add(new ChatMessage { role = "user", content = "Observation: " + observation });
+                    }
+                    else
+                    {
+                        break;
+                    }
+                    
+                    step++;
+                    Repaint();
+                    await System.Threading.Tasks.Task.Yield();
+                }
+            }
+            catch (System.Exception e)
+            {
+                chatHistory.Add("Critical Error: " + e.Message);
+                Debug.LogException(e);
+            }
+            finally
+            {
+                isProcessing = false;
+                Repaint();
+            }
         }
     }
 }

@@ -13,20 +13,22 @@ namespace ForgeAI
     public class ForgeAISettings : ScriptableSingleton<ForgeAISettings>
     {
         public AIProvider provider = AIProvider.OpenAI;
-        [SerializeField] private string openAIKey;
-        [SerializeField] private string geminiKey;
-        
-        public string ModelName = "gpt-4o"; // Default to a strong model
+        public string ModelName = "gpt-4o";
+
+        private const string OpenAIKeyPref = "ForgeAI_OpenAIKey";
+        private const string GeminiKeyPref = "ForgeAI_GeminiKey";
 
         public string GetApiKey()
         {
-            return provider == AIProvider.OpenAI ? openAIKey : geminiKey;
+            return provider == AIProvider.OpenAI 
+                ? EditorPrefs.GetString(OpenAIKeyPref, "") 
+                : EditorPrefs.GetString(GeminiKeyPref, "");
         }
 
         public void SetApiKey(string key)
         {
-            if (provider == AIProvider.OpenAI) openAIKey = key;
-            else geminiKey = key;
+            if (provider == AIProvider.OpenAI) EditorPrefs.SetString(OpenAIKeyPref, key);
+            else EditorPrefs.SetString(GeminiKeyPref, key);
         }
 
         public void Save()
