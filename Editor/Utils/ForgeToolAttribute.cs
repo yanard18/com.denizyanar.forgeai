@@ -2,20 +2,18 @@ using System;
 
 namespace ForgeAI
 {
-    [AttributeUsage(AttributeTargets.Method, Inherited = false)]
+    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, Inherited = false)]
     public class ForgeToolAttribute : Attribute
     {
+        public string Name { get; }
         public string Description { get; }
-        public string ParameterHints { get; }
         public bool RequiresApproval { get; }
-        public bool SupportsUndo { get; }
 
-        public ForgeToolAttribute(string description, string parameterHints = "", bool requiresApproval = true, bool supportsUndo = false)
+        public ForgeToolAttribute(string name, string description, bool requiresApproval = true)
         {
+            Name = name;
             Description = description;
-            ParameterHints = parameterHints;
             RequiresApproval = requiresApproval;
-            SupportsUndo = supportsUndo;
         }
     }
 }

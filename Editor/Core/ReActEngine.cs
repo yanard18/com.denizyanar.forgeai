@@ -11,9 +11,10 @@ namespace ForgeAI
     {
         private struct ToolInfo
         {
-            public MethodInfo Method;
+            public IForgeTool Instance;
+            public string Name;
             public string Description;
-            public string ParameterHints;
+            public bool RequiresApproval;
         }
 
         private static Dictionary<string, ToolInfo> availableTools = new Dictionary<string, ToolInfo>(StringComparer.OrdinalIgnoreCase);
@@ -23,20 +24,29 @@ namespace ForgeAI
         {
             if (initialized) return;
 
-            var methods = TypeCache.GetMethodsWithAttribute<ForgeToolAttribute>();
-
             availableTools.Clear();
-            foreach (var method in methods)
-            {
-                if (!method.IsStatic || !method.IsPublic) continue;
+            var toolTypes = TypeCache.GetTypesWithAttribute<ForgeToolAttribute>();
 
-                var attr = method.GetCustomAttribute<ForgeToolAttribute>();
-                availableTools[method.Name] = new ToolInfo
+            foreach (var type in toolTypes)
+            {
+                if (!typeof(IForgeTool).IsAssignableFrom(type)) continue;
+
+                var attr = (ForgeToolAttribute)Attribute.GetCustomAttribute(type, typeof(ForgeToolAttribute));
+                try
                 {
-                    Method = method,
-                    Description = attr.Description,
-                    ParameterHints = attr.ParameterHints
-                };
+                    var instance = (IForgeTool)Activator.CreateInstance(type);
+                    availableTools[attr.Name] = new ToolInfo
+                    {
+                        Instance = instance,
+                        Name = attr.Name,
+                        Description = attr.Description,
+                        RequiresApproval = attr.RequiresApproval
+                    };
+                }
+                catch (Exception e)
+                {
+                    ForgeLogger.Log("Engine", $"Failed to instantiate tool {type.Name}: {e.Message}");
+                }
             }
             initialized = true;
         }
@@ -46,8 +56,7 @@ namespace ForgeAI
             Initialize();
             if (availableTools.TryGetValue(toolName, out var info))
             {
-                var attr = info.Method.GetCustomAttribute<ForgeToolAttribute>();
-                return attr != null && attr.RequiresApproval;
+                return info.RequiresApproval;
             }
             return true; 
         }
@@ -56,32 +65,28 @@ namespace ForgeAI
         {
             Initialize();
             var sb = new System.Text.StringBuilder();
-            sb.AppendLine("You are an intelligent Unity Editor Assistant.");
-            sb.AppendLine("You can manipulate the scene and editor using the following tools:");
+            sb.AppendLine("You are an intelligent Unity Editor Assistant (ForgeAI).");
+            sb.AppendLine("You have access to the following tools:");
             sb.AppendLine("");
 
-            foreach (var tool in availableTools)
+            foreach (var tool in availableTools.Values)
             {
-                sb.AppendLine($"- {tool.Key}({tool.Value.ParameterHints}): {tool.Value.Description}");
+                sb.AppendLine(tool.Instance.GetPromptDefinition());
+                sb.AppendLine(""); 
             }
 
-            sb.AppendLine("");
             sb.AppendLine("### Guidelines:");
-            sb.AppendLine("1. **ReAct Pattern**: Always Reason before Acting. Use the format:");
-            sb.AppendLine("   Thought: [Your analysis of the state and what needs to be done]");
-            sb.AppendLine("   ```json");
-            sb.AppendLine("   { \"tool\": \"ToolName\", \"args\": [\"arg1\", \"arg2\"] }");
-            sb.AppendLine("   ```");
-            sb.AppendLine("2. **File Editing**: When using `ReplaceText`, you MUST ensure `oldText` matches the file content EXACTLY (including whitespace). ALWAYS `ReadFile` before editing to get the exact string.");
-            sb.AppendLine("3. **Path Safety**: Do not guess file paths. Use `ListFiles` to explore if you are unsure.");
-            sb.AppendLine("4. **Batching**: You can output MULTIPLE tool blocks in one response to perform actions in sequence. For moving many files to one folder, use `BatchMove`. For renaming many files, use `BatchRename`.");
-            sb.AppendLine("5. **Bulk Formats**:");
-            sb.AppendLine("   - `BatchMove(sources, targetDir)`: sources is a semi-colon separated string (e.g., 'path1;path2;path3').");
-            sb.AppendLine("   - `BatchRename(renamesJson)`: format is '[{\"p\":\"old/path\",\"n\":\"newName\"},...]'.");
-            sb.AppendLine("6. **Completion**: If you can answer the user's request directly or have finished the task, simply provide the final answer without a tool block.");
-            sb.AppendLine("7. **Action Enforcement**: If your response implies an action (e.g., 'I will move...', 'Creating file...'), you **MUST** include the JSON tool block. Describing the plan without the JSON is strictly forbidden.");
+            sb.AppendLine("1. **ReAct Protocol**: You MUST reason before acting. If you decide an action is needed, output the Action block IMMEDIATELY in the same response. Do not ask for permission if the task is clear.");
+            sb.AppendLine("   Format:");
+            sb.AppendLine("   Thought: [Reasoning]");
+            sb.AppendLine("   Action: [ToolName]");
+            sb.AppendLine("   Action Input:");
+            sb.AppendLine("   [Raw Text Argument]");
             sb.AppendLine("");
-            sb.AppendLine("CRITICAL: Do not just say you will do something. DO IT by outputting the JSON.");
+            sb.AppendLine("2. **No Stalling**: Do not say 'I will now do X' without actually providing the 'Action:' block. If you are ready to act, act.");
+            sb.AppendLine("3. **Multiple Actions**: You can propose multiple actions in one response by repeating the Action/Action Input blocks.");
+            sb.AppendLine("4. **Safety**: Do not use ReplaceText on binary files (.fbx, .png). Use MoveAsset to rename.");
+            sb.AppendLine("");
             sb.AppendLine("Begin!");
             
             return sb.ToString();
@@ -91,71 +96,36 @@ namespace ForgeAI
         {
             var actions = new List<ToolAction>();
             
-            int index = 0;
-            while (index < response.Length)
-            {
-                int start = response.IndexOf('{', index);
-                if (start == -1) break;
+            // Regex to find "Action: <Name>" followed optionally by "Action Input:"
+            // We iterate through matches.
+            
+            string pattern = @"Action:\s*([a-zA-Z0-9_]+)";
+            var matches = Regex.Matches(response, pattern);
 
-                int end = FindMatchingBrace(response, start);
-                if (end != -1)
+            for (int i = 0; i < matches.Count; i++)
+            {
+                var match = matches[i];
+                string toolName = match.Groups[1].Value.Trim();
+                
+                // Find start of Action Input
+                int inputStartSearchIndex = match.Index + match.Length;
+                int nextActionIndex = (i + 1 < matches.Count) ? matches[i + 1].Index : response.Length;
+                
+                // Look for "Action Input:" literal within this range
+                string inputLabel = "Action Input:";
+                int labelIndex = response.IndexOf(inputLabel, inputStartSearchIndex, nextActionIndex - inputStartSearchIndex, StringComparison.OrdinalIgnoreCase);
+
+                string toolInput = "";
+                if (labelIndex != -1)
                 {
-                    string candidate = response.Substring(start, end - start + 1);
-                    if (candidate.Contains("\"tool\"") || candidate.Contains("'tool'"))
-                    {
-                        var action = ParseToolAction(candidate);
-                        if (action != null && !string.IsNullOrEmpty(action.tool))
-                        {
-                            actions.Add(action);
-                        }
-                    }
-                    index = end + 1;
+                    int contentStart = labelIndex + inputLabel.Length;
+                    toolInput = response.Substring(contentStart, nextActionIndex - contentStart).Trim();
                 }
-                else
-                {
-                    index = start + 1;
-                }
+
+                actions.Add(new ToolAction { tool = toolName, rawInput = toolInput });
             }
             
-            if (actions.Count > 0)
-            {
-                ForgeLogger.Log("ActionParsing", $"Extracted {actions.Count} actions");
-            }
             return actions;
-        }
-
-        private static int FindMatchingBrace(string text, int startIndex)
-        {
-            int depth = 0;
-            bool inQuote = false;
-            char quoteChar = '\0';
-
-            for (int i = startIndex; i < text.Length; i++)
-            {
-                char c = text[i];
-                if (inQuote)
-                {
-                    if (c == quoteChar && text[i - 1] != '\\') inQuote = false;
-                }
-                else
-                {
-                    if (c == '"' || c == '\'') { inQuote = true; quoteChar = c; }
-                    else if (c == '{') depth++;
-                    else if (c == '}')
-                    {
-                        depth--;
-                        if (depth == 0) return i;
-                    }
-                }
-            }
-            return -1;
-        }
-
-        public static string ExtractActionJson(string response)
-        {
-            var actions = ExtractAllActions(response);
-            if (actions.Count > 0) return "found"; 
-            return null;
         }
 
         public static string ExecuteTool(ToolAction action)
@@ -168,129 +138,26 @@ namespace ForgeAI
                     return "Error: Invalid tool action.";
                 }
 
-                ForgeLogger.Log("ToolExecution", $"Invoking {action.tool}", $"Args: {string.Join(", ", action.args)}");
-
                 if (availableTools.TryGetValue(action.tool, out var toolInfo))
                 {
-                    var parameters = toolInfo.Method.GetParameters();
-                    if (action.args == null || action.args.Length != parameters.Length)
-                    {
-                        return $"Error: Argument count mismatch. Expected {parameters.Length}, got {action.args?.Length ?? 0}.";
-                    }
-
-                    object[] invokeArgs = new object[parameters.Length];
-                    for (int i = 0; i < parameters.Length; i++)
-                    {
-                        var paramType = parameters[i].ParameterType;
-                        try 
-                        {
-                            invokeArgs[i] = Convert.ChangeType(action.args[i], paramType);
-                        }
-                        catch
-                        {
-                            invokeArgs[i] = action.args[i];
-                        }
-                    }
-
-                    string result = (string)toolInfo.Method.Invoke(null, invokeArgs);
+                    ForgeLogger.Log("ToolExecution", $"Invoking {action.tool}", action.rawInput);
+                    string result = toolInfo.Instance.Execute(action.rawInput);
                     ForgeLogger.Log("ToolResult", $"Result of {action.tool}", result);
                     return result;
                 }
                 
-                string notFoundMsg = $"Error: Tool '{action.tool}' not found.";
-                ForgeLogger.Log("ToolError", "Tool Not Found", notFoundMsg);
-                return notFoundMsg;
+                return $"Error: Tool '{action.tool}' not found.";
             }
             catch (Exception e)
             {
-                string errorMsg = $"Error executing tool: {e.Message}";
-                ForgeLogger.Log("ToolError", "Exception", errorMsg);
-                return errorMsg;
+                return $"Error executing tool: {e.Message}";
             }
         }
 
         public class ToolAction
         {
             public string tool;
-            public string[] args;
-        }
-
-        public static ToolAction ParseToolAction(string json)
-        {
-            var action = new ToolAction();
-            
-            var toolMatch = Regex.Match(json, @"[""']tool[""']\s*:\s*[""']([^""']+)[""']");
-            if (toolMatch.Success)
-            {
-                action.tool = toolMatch.Groups[1].Value;
-            }
-
-            var argsStartMatch = Regex.Match(json, @"[""']args[""']\s*:\s*\[");
-            if (argsStartMatch.Success)
-            {
-                int arrayStartIndex = argsStartMatch.Index + argsStartMatch.Length;
-                int end = -1;
-                int depth = 0;
-                bool inQuote = false;
-                char quoteChar = '\0';
-                for(int i = arrayStartIndex - 1; i < json.Length; i++) {
-                     char c = json[i];
-                     if(inQuote) { if(c==quoteChar && json[i-1]!='\\') inQuote=false; }
-                     else {
-                         if(c=='"'||c=='\'') { inQuote=true; quoteChar=c; }
-                         else if(c=='[') depth++;
-                         else if(c==']') { depth--; if(depth==0) { end=i; break; } }
-                     }
-                }
-
-                if (end != -1)
-                {
-                    string argsContent = json.Substring(arrayStartIndex, end - arrayStartIndex);
-                    action.args = ParseArgumentList(argsContent);
-                }
-                else action.args = new string[0];
-            }
-            else action.args = new string[0];
-
-            return action;
-        }
-
-        private static string[] ParseArgumentList(string content)
-        {
-            var list = new List<string>();
-            var currentArg = new System.Text.StringBuilder();
-            bool inQuote = false;
-            char quoteChar = '\0';
-
-            for (int i = 0; i < content.Length; i++)
-            {
-                char c = content[i];
-                if (inQuote)
-                {
-                    if (c == quoteChar && i > 0 && content[i - 1] == '\\')
-                    {
-                        // Unescape the quote: remove the backslash and add the quote
-                        currentArg.Remove(currentArg.Length - 1, 1);
-                        currentArg.Append(c);
-                    }
-                    else if (c == quoteChar)
-                    {
-                        inQuote = false;
-                    }
-                    else
-                    {
-                        currentArg.Append(c);
-                    }
-                }
-                else
-                {
-                    if (c == '"' || c == '\'') { inQuote = true; quoteChar = c; }
-                    else if (c == ',') { list.Add(currentArg.ToString().Trim()); currentArg.Clear(); }
-                    else if (!char.IsWhiteSpace(c)) currentArg.Append(c);
-                }
-            }
-            if (currentArg.Length > 0) list.Add(currentArg.ToString().Trim());
-            return list.ToArray();
+            public string rawInput;
         }
     }
 }
