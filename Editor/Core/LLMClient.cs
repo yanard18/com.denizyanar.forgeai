@@ -42,6 +42,10 @@ namespace ForgeAI
             {
                 // Pretty print JSON to ensure \n are readable
                 string jsonHistory = JsonUtility.ToJson(new ConversationLog { messages = conversationHistory }, true);
+                
+                // Unescape special characters for better readability in logs
+                jsonHistory = jsonHistory.Replace("\\n", "\n").Replace("\\r", "\r").Replace("\\t", "\t");
+
                 ForgeLogger.LogRaw("SENDING TO LLM", jsonHistory);
             }
             catch (Exception e) { Debug.LogWarning($"[ForgeAI] Log failed: {e.Message}"); }
