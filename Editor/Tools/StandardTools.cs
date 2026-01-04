@@ -41,7 +41,7 @@ Path: <directory_path> (Optional: add 'Recursive: true' on next line)";
                 }
 
                 path = ToolUtils.NormalizePath(path);
-                if (!Directory.Exists(path)) return $"Error: Directory '{path}' not found.";
+                if (!Directory.Exists(path)) return $"Error: Directory '{{path}}' not found.";
 
                 var option = recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
                 
@@ -57,11 +57,11 @@ Path: <directory_path> (Optional: add 'Recursive: true' on next line)";
                     .Select(f => f.Replace('\\', '/'))
                     .ToList();
 
-                if (allDirs.Count == 0 && allFiles.Count == 0) return $"Directory '{path}' is empty.";
+                if (allDirs.Count == 0 && allFiles.Count == 0) return $"Directory '{{path}}' is empty.";
 
-                return $"Contents of '{path}':\n[Dirs]\n{string.Join("\n", allDirs)}\n[Files]\n{string.Join("\n", allFiles)}";
+                return $"Contents of '{{path}}':\n[Dirs]\n{string.Join("\n", allDirs)}\n[Files]\n{string.Join("\n", allFiles)}";
             }
-            catch (Exception e) { return $"Error: {e.Message}"; }
+            catch (Exception e) { return $"Error: {{e.Message}}"; }
         }
     }
 
@@ -107,7 +107,7 @@ To: Assets/Models/NewName.fbx";
                     if (!toPath.StartsWith("Assets") && !toPath.StartsWith("Packages")) toPath = Path.Combine("Assets", toPath);
 
                     if (!File.Exists(fromPath) && !Directory.Exists(fromPath))
-                        return $"Error: Source '{fromPath}' does not exist.";
+                        return $"Error: Source '{{fromPath}}' does not exist.";
 
                     // Ensure destination folder exists
                     string destDir = Path.GetDirectoryName(toPath);
@@ -118,12 +118,12 @@ To: Assets/Models/NewName.fbx";
                     }
 
                     string error = AssetDatabase.MoveAsset(fromPath, toPath);
-                    if (!string.IsNullOrEmpty(error)) return $"Error: {error}";
+                    if (!string.IsNullOrEmpty(error)) return $"Error: {{error}}";
 
-                    return $"Success: Moved/Renamed '{fromPath}' to '{toPath}'.";
+                    return $"Success: Moved/Renamed '{{fromPath}}' to '{{toPath}}'.";
                 }
             }
-            catch (Exception e) { return $"Error: {e.Message}"; }
+            catch (Exception e) { return $"Error: {{e.Message}}"; }
         }
     }
 
@@ -143,10 +143,10 @@ Usage:
             try
             {
                 string path = ToolUtils.NormalizePath(rawInput.Trim());
-                if (AssetDatabase.DeleteAsset(path)) return $"Success: Deleted '{path}'.";
-                return $"Error: Failed to delete '{path}' (Check if it exists).";
+                if (AssetDatabase.DeleteAsset(path)) return $"Success: Deleted '{{path}}'.";
+                return $"Error: Failed to delete '{{path}}' (Check if it exists).";
             }
-            catch (Exception e) { return $"Error: {e.Message}"; }
+            catch (Exception e) { return $"Error: {{e.Message}}"; }
         }
     }
 
@@ -171,17 +171,17 @@ Usage:
             {
                 string path = ToolUtils.NormalizePath(rawInput.Trim());
                 
-                if (!File.Exists(path)) return $"Error: File not found at '{path}'.";
+                if (!File.Exists(path)) return $"Error: File not found at '{{path}}'.";
                 
                 // Guard against binary files to prevent garbage output
                 if (ToolUtils.IsBinaryFile(path)) 
-                    return $"Error: '{path}' appears to be a binary file. Cannot read text content.";
+                    return $"Error: '{{path}}' appears to be a binary file. Cannot read text content.";
 
                 string text = File.ReadAllText(path);
                 if (text.Length > 12000) return text.Substring(0, 12000) + "\n... [Content Truncated]";
                 return text;
             }
-            catch (Exception e) { return $"Error: {e.Message}"; }
+            catch (Exception e) { return $"Error: {{e.Message}}"; }
         }
     }
 
@@ -225,17 +225,17 @@ Content:
                     path = ToolUtils.NormalizePath(path);
                     
                     if (ToolUtils.IsBinaryFile(path))
-                        return $"Error: Cannot write text to binary file '{path}'.";
+                        return $"Error: Cannot write text to binary file '{{path}}'.";
 
                     string dir = Path.GetDirectoryName(path);
                     if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
                     
                     File.WriteAllText(path, content);
                     AssetDatabase.ImportAsset(path);
-                    return $"Success: Wrote to '{path}'.";
+                    return $"Success: Wrote to '{{path}}'.";
                 }
             }
-            catch (Exception e) { return $"Error: {e.Message}"; }
+            catch (Exception e) { return $"Error: {{e.Message}}"; }
         }
     }
 
@@ -262,13 +262,13 @@ New:
                 {
                     string pathLine = reader.ReadLine();
                     if (pathLine == null || !pathLine.StartsWith("Path:", StringComparison.OrdinalIgnoreCase))
-                        return "Error: Input must start with 'Path: <path>'" ;
+                        return "Error: Input must start with 'Path: <path>'";
 
                     string path = ToolUtils.NormalizePath(pathLine.Substring(5).Trim());
 
                     // Guard
                     if (ToolUtils.IsBinaryFile(path))
-                        return $"Error: Cannot replace text in binary file '{path}'.";
+                        return $"Error: Cannot replace text in binary file '{{path}}'.";
 
                     string line = reader.ReadLine();
                     while (line != null && string.IsNullOrWhiteSpace(line)) line = reader.ReadLine();
@@ -292,21 +292,21 @@ New:
                     if (newText.StartsWith("\n")) newText = newText.Substring(1);
                     else if (newText.StartsWith("\r\n")) newText = newText.Substring(2);
 
-                    if (!File.Exists(path)) return $"Error: File '{path}' not found.";
+                    if (!File.Exists(path)) return $"Error: File '{{path}}' not found.";
                     
                     string content = File.ReadAllText(path);
                     if (!content.Contains(oldText)) 
                     {
-                        return $"Error: Could not find exact match for Old text in '{path}'.";
+                        return $"Error: Could not find exact match for Old text in '{{path}}'.";
                     }
 
                     string newContent = content.Replace(oldText, newText);
                     File.WriteAllText(path, newContent);
                     AssetDatabase.ImportAsset(path);
-                    return $"Success: Replaced text in '{path}'.";
+                    return $"Success: Replaced text in '{{path}}'.";
                 }
             }
-            catch (Exception e) { return $"Error: {e.Message}"; }
+            catch (Exception e) { return $"Error: {{e.Message}}"; }
         }
     }
 

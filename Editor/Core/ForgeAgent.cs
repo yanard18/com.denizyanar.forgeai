@@ -29,7 +29,13 @@ namespace ForgeAI
 
         public async Task ChatAsync(string userPrompt)
         {
-            if (string.IsNullOrWhiteSpace(userPrompt)) return;
+            if (string.IsNullOrWhiteSpace(userPrompt)) return; 
+            
+            // Start new log session if this is the beginning of a conversation
+            if (interactions.Count == 0)
+            {
+                ForgeLogger.StartNewSession();
+            }
 
             var interaction = new ForgeInteraction(userPrompt);
             interactions.Add(interaction);
@@ -56,7 +62,6 @@ namespace ForgeAI
                 interaction.Status = "Action Executed";
                 interaction.ProposedActions.Clear(); // Clear pending
 
-                // Continue loop with combined observation
                 await RunReActLoop(interaction, 0); 
             }
             catch (Exception e)
@@ -95,7 +100,6 @@ namespace ForgeAI
             {
                 while (step < MAX_STEPS)
                 {
-                    // Clear previous turn's proposed actions
                     current.ProposedActions.Clear();
 
                     var context = BuildContext(current);
@@ -112,14 +116,12 @@ namespace ForgeAI
                     current.AIResponse = response; 
                     OnHistoryChanged?.Invoke();
 
-                    // Check for Tool Actions (Plural)
                     var actions = ReActEngine.ExtractAllActions(response);
                     
                     if (actions.Count > 0)
                     {
                         current.ProposedActions = actions;
 
-                        // Check if ANY action needs approval
                         bool needsApproval = false;
                         foreach (var act in actions)
                         {
@@ -135,19 +137,16 @@ namespace ForgeAI
                             current.Status = "Waiting for Approval";
                             NotifyProcessing(false);
                             OnActionProposed?.Invoke();
-                            return; // PAUSE
+                            return; 
                         }
                         else
                         {
-                            // Auto-execute batch
                             current.ActionResults.Clear();
                             foreach (var act in actions)
                             {
                                 var obs = ReActEngine.ExecuteTool(act);
                                 current.ActionResults.Add(obs);
                             }
-                            
-                            // Loop continues automatically with observations
                         }
                     }
                     else
@@ -176,35 +175,33 @@ namespace ForgeAI
             var msgs = new List<ChatMessage>();
             msgs.Add(new ChatMessage { role = "system", content = ReActEngine.GetSystemPrompt() });
 
-            foreach (var i in interactions)
+            // Sliding Window: Keep last 10 interactions
+            int startIndex = Math.Max(0, interactions.Count - 11);
+            
+            for (int i = startIndex; i < interactions.Count; i++)
             {
-                if (i == current) continue;
+                var interaction = interactions[i];
+                if (interaction == current) continue;
 
-                msgs.Add(new ChatMessage { role = "user", content = i.UserPrompt });
-                if (!string.IsNullOrEmpty(i.AIResponse))
+                msgs.Add(new ChatMessage { role = "user", content = interaction.UserPrompt });
+                if (!string.IsNullOrEmpty(interaction.AIResponse))
                 {
-                    msgs.Add(new ChatMessage { role = "assistant", content = i.AIResponse });
+                    msgs.Add(new ChatMessage { role = "assistant", content = interaction.AIResponse });
                 }
-                if (i.ActionResults.Count > 0)
+                
+                if (interaction.ActionResults.Count > 0)
                 {
-                    string combinedObs = string.Join("\n", i.ActionResults);
-                    msgs.Add(new ChatMessage { role = "user", content = "Observations:\n" + combinedObs });
+                    // STRICT Digest and Discard: Always hide past observations.
+                    // The AI knows it must have summarized this in its previous 'Thought'.
+                    msgs.Add(new ChatMessage { role = "user", content = "Observation: [Hidden. Processed in previous turn.]" });
                 }
             }
 
-            // Add current state
+            // Current Interaction (Active Context) - Always show full observations
             msgs.Add(new ChatMessage { role = "user", content = current.UserPrompt });
-            
-            // If we are mid-loop (e.g. have previous results from a batch but loop continued)
-            // But Wait! My RunReActLoop logic clears ActionResults on new execution?
-            // Actually, if we loop, we want to append the PREVIOUS results to the context.
-            // My current logic accumulates ActionResults in the Interaction.
-            // If step > 0, we imply there was a previous turn.
-            // For simplicity, the `current` interaction represents the *latest* turn.
             
             if (current.ActionResults.Count > 0)
             {
-                 // If we have results, it means we executed tools.
                  if (!string.IsNullOrEmpty(current.AIResponse))
                     msgs.Add(new ChatMessage { role = "assistant", content = current.AIResponse });
                  

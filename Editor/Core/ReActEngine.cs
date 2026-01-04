@@ -45,7 +45,7 @@ namespace ForgeAI
                 }
                 catch (Exception e)
                 {
-                    ForgeLogger.Log("Engine", $"Failed to instantiate tool {type.Name}: {e.Message}");
+                    Debug.LogWarning($"[ForgeAI] Failed to instantiate tool {type.Name}: {e.Message}");
                 }
             }
             initialized = true;
@@ -86,6 +86,7 @@ namespace ForgeAI
             sb.AppendLine("2. **No Stalling**: Do not say 'I will now do X' without actually providing the 'Action:' block. If you are ready to act, act.");
             sb.AppendLine("3. **Multiple Actions**: You can propose multiple actions in one response by repeating the Action/Action Input blocks.");
             sb.AppendLine("4. **Safety**: Do not use ReplaceText on binary files (.fbx, .png). Use MoveAsset to rename.");
+            sb.AppendLine("5. **Memory Constraint**: Past observations are HIDDEN to save memory. You MUST summarize important findings (e.g., file paths found) in your 'Thought' block immediately after acting, or you will lose them.");
             sb.AppendLine("");
             sb.AppendLine("Begin!");
             
@@ -96,33 +97,40 @@ namespace ForgeAI
         {
             var actions = new List<ToolAction>();
             
-            // Regex to find "Action: <Name>" followed optionally by "Action Input:"
-            // We iterate through matches.
-            
-            string pattern = @"Action:\s*([a-zA-Z0-9_]+)";
-            var matches = Regex.Matches(response, pattern);
+            // Matches "Action: <Name>"
+            var actionMatches = Regex.Matches(response, @"^Action:\s*([a-zA-Z0-9_]+)", RegexOptions.Multiline);
 
-            for (int i = 0; i < matches.Count; i++)
+            for (int i = 0; i < actionMatches.Count; i++)
             {
-                var match = matches[i];
+                var match = actionMatches[i];
                 string toolName = match.Groups[1].Value.Trim();
                 
-                // Find start of Action Input
-                int inputStartSearchIndex = match.Index + match.Length;
-                int nextActionIndex = (i + 1 < matches.Count) ? matches[i + 1].Index : response.Length;
+                // Determine the range for this action's input
+                int startSearch = match.Index + match.Length;
+                int endSearch = (i + 1 < actionMatches.Count) ? actionMatches[i + 1].Index : response.Length;
                 
-                // Look for "Action Input:" literal within this range
-                string inputLabel = "Action Input:";
-                int labelIndex = response.IndexOf(inputLabel, inputStartSearchIndex, nextActionIndex - inputStartSearchIndex, StringComparison.OrdinalIgnoreCase);
+                // Look for "Action Input:"
+                string inputMarker = "Action Input:";
+                int inputIndex = response.IndexOf(inputMarker, startSearch, endSearch - startSearch, StringComparison.OrdinalIgnoreCase);
 
-                string toolInput = "";
-                if (labelIndex != -1)
+                if (inputIndex != -1)
                 {
-                    int contentStart = labelIndex + inputLabel.Length;
-                    toolInput = response.Substring(contentStart, nextActionIndex - contentStart).Trim();
-                }
+                    int contentStart = inputIndex + inputMarker.Length;
+                    string rawContent = response.Substring(contentStart, endSearch - contentStart);
 
-                actions.Add(new ToolAction { tool = toolName, rawInput = toolInput });
+                    // Refinement: Stop at next "Thought:" if it appears before the next action
+                    int thoughtIndex = rawContent.IndexOf("Thought:", StringComparison.OrdinalIgnoreCase);
+                    if (thoughtIndex != -1)
+                    {
+                        rawContent = rawContent.Substring(0, thoughtIndex);
+                    }
+
+                    actions.Add(new ToolAction { tool = toolName, rawInput = rawContent.Trim() });
+                }
+                else
+                {
+                    actions.Add(new ToolAction { tool = toolName, rawInput = "" });
+                }
             }
             
             return actions;
@@ -140,9 +148,8 @@ namespace ForgeAI
 
                 if (availableTools.TryGetValue(action.tool, out var toolInfo))
                 {
-                    ForgeLogger.Log("ToolExecution", $"Invoking {action.tool}", action.rawInput);
                     string result = toolInfo.Instance.Execute(action.rawInput);
-                    ForgeLogger.Log("ToolResult", $"Result of {action.tool}", result);
+                    // Logging handled by Agent via Context
                     return result;
                 }
                 

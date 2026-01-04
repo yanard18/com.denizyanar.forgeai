@@ -2,12 +2,12 @@ using System;
 
 namespace ForgeAI
 {
-    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, Inherited = false)]
+    [AttributeUsage(AttributeTargets.Class, Inherited = false, AllowMultiple = false)]
     public class ForgeToolAttribute : Attribute
     {
-        public string Name { get; }
-        public string Description { get; }
-        public bool RequiresApproval { get; }
+        public string Name { get; private set; }
+        public string Description { get; private set; }
+        public bool RequiresApproval { get; private set; }
 
         public ForgeToolAttribute(string name, string description, bool requiresApproval = true)
         {

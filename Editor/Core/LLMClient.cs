@@ -20,16 +20,12 @@ namespace ForgeAI
             public List<ChatMessage> messages;
         }
 
-        // Simple Factory for now. In a larger system, use Dependency Injection.
         private static ILLMProvider GetProvider(AIProvider providerType)
         {
             switch (providerType)
             {
-                case AIProvider.OpenAI:
-                    return new OpenAIProvider();
-                // case AIProvider.Gemini: return new GeminiProvider();
-                default:
-                    return null;
+                case AIProvider.OpenAI: return new OpenAIProvider();
+                default: return null;
             }
         }
 
@@ -38,21 +34,17 @@ namespace ForgeAI
             var settings = ForgeAISettings.instance;
             var apiKey = settings.GetApiKey();
 
-            // Log raw prompt
+            if (string.IsNullOrEmpty(apiKey))
+                return "Error: API Key is missing. Please configure it in the settings.";
+
+            // Log Request (All prompts sent)
             try
             {
+                // Pretty print JSON to ensure \n are readable
                 string jsonHistory = JsonUtility.ToJson(new ConversationLog { messages = conversationHistory }, true);
-                ForgeLogger.Log("RawPrompt", $"Sending to {settings.ModelName}", jsonHistory);
+                ForgeLogger.LogRaw("SENDING TO LLM", jsonHistory);
             }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[ForgeAI] Failed to log raw prompt: {e.Message}");
-            }
-
-            if (string.IsNullOrEmpty(apiKey))
-            {
-                return "Error: API Key is missing. Please configure it in the settings.";
-            }
+            catch (Exception e) { Debug.LogWarning($"[ForgeAI] Log failed: {e.Message}"); }
 
             var provider = GetProvider(settings.provider);
             if (provider != null)
@@ -62,17 +54,19 @@ namespace ForgeAI
                     ApiKey = apiKey,
                     Model = settings.ModelName,
                     History = conversationHistory,
-                    // Future: Add settings for Temp/MaxTokens here
                     Temperature = 0.7f,
                     MaxTokens = 4096 
                 };
 
                 string response = await provider.SendRequestAsync(request);
-                ForgeLogger.Log("RawResponse", "Received from LLM", response);
+
+                // Log Response (All prompt received)
+                ForgeLogger.LogRaw("RECEIVED FROM LLM", response);
+                
                 return response;
             }
             
-            return $"Error: Implementation for {settings.provider} is pending or provider not found.";
+            return $"Error: Provider {settings.provider} not found.";
         }
     }
 }
