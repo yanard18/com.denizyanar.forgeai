@@ -65,15 +65,11 @@ graph LR
 #### Core Design
 *   **Fundamental Tools:** Started with three core tools: `RenameAI`, `MoveAI`, and `GitOperationAI`.
 *   **Structured Tool Calls:** Forced the LLM to output a strict JSON format for tool commands.
-    *   `[image: Example of the JSON format for a RenameAI tool call]`
 *   **Command Pattern for Safety:** Displayed a full plan to the user before execution and added an "Undo" button for each step. This gave the user full control.
-    *   `[gif: UI showing a proposed plan with 'Execute' and 'Undo' buttons]`
 *   **Central Orchestrator:** An AI orchestrator broke down user requests into a step-by-step plan using the available tools.
-    *   `[image: Diagram showing User Prompt -> Orchestrator -> JSON Plan]`
 
 #### Weaknesses
 *   **One-Shot Plans:** The orchestrator created a complete plan upfront and couldn't change it based on tool results.
-    *   `[gif: A failed plan where a tool's output is ignored, leading to an error]`
 *   **No User Interaction:** The plan ran from start to finish with no way for the user to step in.
 *   **No Memory:** The agent had no memory of past actions or context.
 
