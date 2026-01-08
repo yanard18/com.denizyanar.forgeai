@@ -13,7 +13,7 @@ This project also serves as the final project for a "Prompt Engineering" lecture
 ForgeAI is an intelligent AI agent for the Unity Editor that autonomously solves problems and automates tasks.
 
 <div align="center">
-<a href="https://www.youtube.com/watch?v=IxHfIrjYX5c" target="_blank">
+<a href="https://www.youtube.com/watch?v=IxHfIrjYX5c&autoplay=1" target="_blank">
 <img src="https://img.youtube.com/vi/IxHfIrjYX5c/maxresdefault.jpg" alt="ForgeAI in Action - Demo Video" width="720"/>
 </a>
 </div>
