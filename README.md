@@ -47,7 +47,7 @@ graph LR
     C -- One-shot Plan --> B;
     B --> D[UI: Review Plan];
     D --> E{User Executes};
-    E --> F([Tool Execution]);
+    E --> F[Tool Execution];
     F --> G[Update UI];
     G --> E;
 
@@ -80,11 +80,11 @@ This approach was developed to address the limitations of the initial Orchestrat
 ```mermaid
 graph LR
     A[User Prompt] --> B{Agent Loop};
-    B --> C[Context (Hidden Obs)];
+    B --> C["Context (Hidden Obs)"];
     C --> D{LLM};
     D -- "Thought + Action" --> E{Approval?};
     E -- Yes --> F[User Review];
-    F -- OK --> G([Execute Tool]);
+    F -- OK --> G["Execute Tool"];
     F -- Reject --> B;
     E -- No --> G;
     G --> H[Observe];
