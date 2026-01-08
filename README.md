@@ -57,7 +57,32 @@ graph LR
 
 This approach was developed to address the limitations of the initial Orchestration model, embracing a more dynamic and interactive agent paradigm.
 
--   **ReAct Engine**: At its heart, ForgeAI uses a ReAct loop. It **reasons** about your request, forms a plan, and then **acts** by executing one or more of its available tools. It observes the outcome and continues this loop until the task is complete.
+```mermaid
+graph TD
+    A[User Prompt] --> B{ForgeAgent Loop};
+    B --> C["Build Context\n(Past Observations Hidden)"];
+    C --> D{LLM};
+    D -- "Thought + Action(s)" --> E[Parse Actions];
+    E --> F{Requires Approval?};
+    F -- Yes --> G[Wait for User Approval];
+    G --> H{User Action};
+    H -- Approve --> I["Execute Tool(s)"];
+    H -- Reject --> J[Add Rejection to Context];
+    F -- No --> I;
+    I --> K[Capture Observations];
+    K --> L{Task Complete?};
+    L -- No --> B;
+    L -- Yes --> M[Finish];
+    J --> B;
+
+    style D fill:#add8e6,stroke:#333,stroke-width:2px
+```
+
+-   **ReAct Engine**: The agent operates in a continuous loop: **Reason** (Thought) -> **Act** (Action) -> **Observe** (Result).
+-   **Key Differences from Classic ReAct:**
+    -   **Active Memory Compression**: To save context window space, past raw tool outputs are hidden. The agent *must* summarize key findings in its "Thought" block immediately, or they are lost.
+    -   **Explicit Approval Step**: Dangerous actions (like writing files) trigger a "Waiting for Approval" state, pausing the loop until the user consents.
+    -   **Multi-Action Support**: The agent can propose multiple independent actions in a single turn to be executed in batch.
 
 ## Getting Started
 
