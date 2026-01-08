@@ -1,12 +1,14 @@
+<div align="center">
+
 # ForgeAI: A Unity Editor AI Assistant
-
-
 
 ForgeAI is an autonomous, intelligent AI agent integrated into the Unity Editor. It empowers developers by automating complex tasks—such as manipulating scenes, managing assets, and creating custom editor tools—directly within the project context.
 
 Unlike existing solutions like Unity Muse, ForgeAI is designed to deeply understand the project's context, including reading operations, allowing it to take more informed and relevant actions. The initial motivation for this tool emerged from the challenges faced by a game development team struggling with complex Git operations, fixing wrongly named assets, and organizing project files.
 
 This project also serves as the final project for a "Prompt Engineering" lecture, exploring advanced techniques for AI agent design and interaction within a practical application. The core architectural pattern for the AI's implementation is currently under experimentation.
+
+</div>
 
 ## Overview
 
@@ -27,6 +29,8 @@ ForgeAI can tackle a wide range of complex, multi-step tasks that require projec
 -   > *"Change the colors of all Light components randomly in the currently open scene to test different lighting moods."*
 -   > *"Create a new projectile particle effect that looks like a magic spell cast from a player's hand. After creating it, commit the new asset with an appropriate message and push the changes."*
 -   > *"Analyze the C# code in the selected files. Critique it for any issues related to performance, style, or adherence to best practices, and then suggest refactorings."*
+
+---
 
 ## Core Concepts
 
@@ -54,11 +58,11 @@ graph LR
     style C fill:#add8e6,stroke:#333,stroke-width:2px
 ```
 
-**Motivation:**
+#### Motivation
 *   Our team struggled with messy projects: bad asset names and broken git branches.
 *   ForgeAI was born from a need for a smart assistant to fix these issues.
 
-**Core Design:**
+#### Core Design
 *   **Fundamental Tools:** Started with three core tools: `RenameAI`, `MoveAI`, and `GitOperationAI`.
 *   **Structured Tool Calls:** Forced the LLM to output a strict JSON format for tool commands.
     *   `[image: Example of the JSON format for a RenameAI tool call]`
@@ -67,7 +71,7 @@ graph LR
 *   **Central Orchestrator:** An AI orchestrator broke down user requests into a step-by-step plan using the available tools.
     *   `[image: Diagram showing User Prompt -> Orchestrator -> JSON Plan]`
 
-**Weaknesses:**
+#### Weaknesses
 *   **One-Shot Plans:** The orchestrator created a complete plan upfront and couldn't change it based on tool results.
     *   `[gif: A failed plan where a tool's output is ignored, leading to an error]`
 *   **No User Interaction:** The plan ran from start to finish with no way for the user to step in.
@@ -95,10 +99,13 @@ graph LR
 ```
 
 -   **ReAct Engine**: The agent operates in a continuous loop: **Reason** (Thought) -> **Act** (Action) -> **Observe** (Result).
--   **Key Differences from Classic ReAct:**
-    -   **Active Memory Compression**: To save context window space, past raw tool outputs are hidden. The agent *must* summarize key findings in its "Thought" block immediately, or they are lost.
-    -   **Explicit Approval Step**: Dangerous actions (like writing files) trigger a "Waiting for Approval" state, pausing the loop until the user consents.
-    -   **Multi-Action Support**: The agent can propose multiple independent actions in a single turn to be executed in batch.
+
+#### Key Differences from Classic ReAct
+-   **Active Memory Compression**: To save context window space, past raw tool outputs are hidden. The agent *must* summarize key findings in its "Thought" block immediately, or they are lost.
+-   **Explicit Approval Step**: Dangerous actions (like writing files) trigger a "Waiting for Approval" state, pausing the loop until the user consents.
+-   **Multi-Action Support**: The agent can propose multiple independent actions in a single turn to be executed in batch.
+
+---
 
 ## Branch Structure
 
@@ -112,6 +119,8 @@ Beyond the Proof-of-Concept branches, this repository utilizes standard Git bran
 
 -   **`develop`**: This branch serves as the integration point for all new features and ongoing development. All feature work is eventually merged here before being considered for a release.
 -   **`feature/*`**: These branches are created for specific new features, bug fixes, or experimental work. They are branched off `develop` and merged back once completed, ensuring isolated development.
+
+---
 
 ## Further Documentation
 
