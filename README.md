@@ -8,6 +8,26 @@ Unlike existing solutions like Unity Muse, ForgeAI is designed to deeply underst
 
 This project also serves as the final project for a "Prompt Engineering" lecture, exploring advanced techniques for AI agent design and interaction within a practical application. The core architectural pattern for the AI's implementation is currently under experimentation.
 
+## Overview
+
+ForgeAI is an intelligent AI agent for the Unity Editor that autonomously solves problems and automates tasks.
+
+<div align="center">
+<a href="https://www.youtube.com/watch?v=IxHfIrjYX5c" target="_blank">
+<img src="https://img.youtube.com/vi/IxHfIrjYX5c/maxresdefault.jpg" alt="ForgeAI in Action - Demo Video" width="720"/>
+</a>
+</div>
+
+### Example Problems ForgeAI Intends to Solve
+
+ForgeAI can tackle a wide range of complex, multi-step tasks that require project context, reasoning, and the use of multiple tools. Below are examples of user prompts that demonstrate its capabilities:
+
+-   > *"Analyze the naming convention used in the project, then find all files that break this convention and rename them correctly."*
+-   > *"Find all commits by the user 'Yalkin' from the last month and create a short summary of their activity."*
+-   > *"Change the colors of all Light components randomly in the currently open scene to test different lighting moods."*
+-   > *"Create a new projectile particle effect that looks like a magic spell cast from a player's hand. After creating it, commit the new asset with an appropriate message and push the changes."*
+-   > *"Analyze the C# code in the selected files. Critique it for any issues related to performance, style, or adherence to best practices, and then suggest refactorings."*
+
 ## Core Concepts
 
 ForgeAI's design revolves around several key principles and architectural patterns, enabling its intelligent behavior within the Unity Editor.
@@ -100,16 +120,6 @@ graph LR
 3.  Select your desired AI Provider (e.g., OpenAI, Gemini).
 4.  Enter your secret API key into the "API Key" field. Your key is stored securely in your local Editor Preferences and is never shared.
 5.  (Optional) Specify the exact model name you wish to use (e.g., `gpt-4o`, `gemini-1.5-pro-latest`).
-
-## Example Problems ForgeAI Intends to Solve
-
-ForgeAI can tackle a wide range of complex, multi-step tasks that require project context, reasoning, and the use of multiple tools. Below are examples of user prompts that demonstrate its capabilities:
-
--   > *"Analyze the naming convention used in the project, then find all files that break this convention and rename them correctly."*
--   > *"Find all commits by the user 'Yalkin' from the last month and create a short summary of their activity."*
--   > *"Change the colors of all Light components randomly in the currently open scene to test different lighting moods."*
--   > *"Create a new projectile particle effect that looks like a magic spell cast from a player's hand. After creating it, commit the new asset with an appropriate message and push the changes."*
--   > *"Analyze the C# code in the selected files. Critique it for any issues related to performance, style, or adherence to best practices, and then suggest refactorings."*
 
 ## Branch Structure
 
