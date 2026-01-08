@@ -21,35 +21,17 @@ ForgeAI's design revolves around several key principles and architectural patter
 My first attempt at building ForgeAI, focusing on structure and predictability.
 
 ```mermaid
-graph TD
-    subgraph "Phase 1: Planning"
-        A[User provides prompt in AI Window] --> B{AgentOrchestratorTask};
-        B --> C[1. GenerateFullPrompt with all tools];
-        C --> D{LLM};
-        D -- JSON Plan --> B;
-        B --> E[2. Parse JSON & Create Sub-Task Instances];
-    end
+graph LR
+    A[User provides prompt] --> B{Agent Orchestrator};
+    B --> C{LLM};
+    C -- One-shot JSON Plan --> B;
+    B --> D["UI: Display Full Plan for Review"];
+    D --> E{User clicks 'Execute Next Step'};
+    E --> F[Tool from plan executes];
+    F --> G[Update UI with result];
+    G --> E;
 
-    subgraph "Phase 2: Step-by-Step Execution"
-        E --> F[Loop for each step in plan];
-        F --> G{"UI: Display current step\nUser clicks 'Initialize Step'"};
-        G --> H{Orchestrator};
-        H --> I[3. PrepareCurrentStep];
-        I --> J[Inject context from previous steps];
-        J --> K[Generate sub-task prompt];
-        K --> L{LLM};
-        L -- Sub-task response --> H;
-        H --> M[4. Sub-task processes response];
-        M --> N{"UI: Display sub-task's proposed action\nUser clicks 'Confirm & Execute'"};
-        N --> O[5. Sub-task executes its action];
-        O --> P{"UI: Step complete\nUser clicks 'Proceed to Next Step'"};
-        P --> Q[6. Orchestrator captures result];
-        Q --> R[Accumulate result into context];
-        R --> F;
-    end
-
-    style D fill:#f9f,stroke:#333,stroke-width:2px
-    style L fill:#f9f,stroke:#333,stroke-width:2px
+    style C fill:#add8e6,stroke:#333,stroke-width:2px
 ```
 
 **Motivation:**
