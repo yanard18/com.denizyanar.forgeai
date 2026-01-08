@@ -22,13 +22,13 @@ My first attempt at building ForgeAI, focusing on structure and predictability.
 
 ```mermaid
 graph LR
-    A[User provides prompt] --> B{Agent Orchestrator};
+    A[User Prompt] --> B{Agent Orchestrator};
     B --> C{LLM};
-    C -- One-shot JSON Plan --> B;
-    B --> D["UI: Display Full Plan for Review"];
-    D --> E{User clicks 'Execute Next Step'};
-    E --> F[Tool from plan executes];
-    F --> G[Update UI with result];
+    C -- One-shot Plan --> B;
+    B --> D[UI: Review Plan];
+    D --> E{User Executes};
+    E --> F[Tool Execution];
+    F --> G[Update UI];
     G --> E;
 
     style C fill:#add8e6,stroke:#333,stroke-width:2px
@@ -58,18 +58,18 @@ graph LR
 This approach was developed to address the limitations of the initial Orchestration model, embracing a more dynamic and interactive agent paradigm.
 
 ```mermaid
-graph TD
-    A[User Prompt] --> B{ForgeAgent Loop};
-    B --> C["Build Context\n(Past Observations Hidden)"];
+graph LR
+    A[User Prompt] --> B{Agent Loop};
+    B --> C["Context (Hidden Obs)"];
     C --> D{LLM};
-    D -- "Thought + Action" --> E{Requires Approval?};
-    E -- Yes --> F[User Approval];
-    F -- Approved --> G["Execute Tool(s)"];
-    F -- Rejected --> B;
+    D -- "Thought + Action" --> E{Approval?};
+    E -- Yes --> F[User Review];
+    F -- OK --> G["Execute Tool"];
+    F -- Reject --> B;
     E -- No --> G;
-    G --> H[Observe Result];
-    H -- "Task Incomplete" --> B;
-    H -- "Task Complete" --> I[Finish];
+    G --> H[Observe];
+    H -- "Incomplete" --> B;
+    H -- "Complete" --> I[Finish];
 
     style D fill:#add8e6,stroke:#333,stroke-width:2px
 ```
