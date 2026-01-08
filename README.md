@@ -2,7 +2,7 @@
 
 
 
-ForgeAI is an experimental project aiming to develop an intelligent AI agent within the Unity Editor. Its primary goal is to empower Unity developers by autonomously performing actions to solve complex problems and automate repetitive tasks, such as creating Editor tools, manipulating scenes, or managing project assets.
+ForgeAI is an autonomous, intelligent AI agent integrated into the Unity Editor. It empowers developers by automating complex tasks—such as manipulating scenes, managing assets, and creating custom editor tools—directly within the project context.
 
 Unlike existing solutions like Unity Muse, ForgeAI is designed to deeply understand the project's context, including reading operations, allowing it to take more informed and relevant actions. The initial motivation for this tool emerged from the challenges faced by a game development team struggling with complex Git operations, fixing wrongly named assets, and organizing project files.
 
