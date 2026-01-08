@@ -1,10 +1,12 @@
 # ForgeAI: A Unity Editor AI Assistant
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-ForgeAI is an intelligent, conversational AI agent integrated directly into the Unity Editor. It leverages the power of Large Language Models (LLMs) to understand natural language commands, allowing you to perform complex editor tasks, automate workflows, and manage your project with simple instructions.
 
-This project is built as a practical application of modern AI agent design, specifically using the **ReAct (Reason + Act)** pattern.
+ForgeAI is an experimental project aiming to develop an intelligent AI agent within the Unity Editor. Its primary goal is to empower Unity developers by autonomously performing actions to solve complex problems and automate repetitive tasks, such as creating Editor tools, manipulating scenes, or managing project assets.
+
+Unlike existing solutions like Unity Muse, ForgeAI is designed to deeply understand the project's context, including reading operations, allowing it to take more informed and relevant actions. The initial motivation for this tool emerged from the challenges faced by a game development team struggling with complex Git operations, fixing wrongly named assets, and organizing project files.
+
+This project also serves as the final project for a "Prompt Engineering" lecture, exploring advanced techniques for AI agent design and interaction within a practical application. The core architectural pattern for the AI's implementation is currently under experimentation.
 
 ## Core Concepts
 
@@ -12,19 +14,6 @@ This project is built as a practical application of modern AI agent design, spec
 -   **Conversational UI**: Interact with the agent through a simple chat-based window right inside the Unity Editor.
 -   **Extensible Tooling**: The agent's capabilities are defined by a set of tools. Adding new tools is as simple as creating a C# class, making the agent easy to extend.
 -   **Safety First**: By default, any action that modifies your project (like writing or deleting files) requires your explicit approval, giving you full control.
-
-## Features
-
-ForgeAI comes with a set of built-in tools to streamline your workflow:
-
--   **File & Asset Management**:
-    -   `ListFiles`: List files and directories.
-    -   `MoveAsset`: Move or rename assets, correctly updating Unity's AssetDatabase.
-    -   `DeleteAsset`: Safely delete assets from your project.
--   **Content & Code Editing**:
-    -   `ReadFile`: Read the content of any text-based file.
-    -   `WriteFile`: Create new files (scripts, shaders, text files) or overwrite existing ones.
-    -   `ReplaceText`: Perform precise text replacement within files—ideal for refactoring.
 
 ## Getting Started
 
@@ -47,23 +36,23 @@ ForgeAI comes with a set of built-in tools to streamline your workflow:
 4.  Enter your secret API key into the "API Key" field. Your key is stored securely in your local Editor Preferences and is never shared.
 5.  (Optional) Specify the exact model name you wish to use (e.g., `gpt-4o`, `gemini-1.5-pro-latest`).
 
-## How to Use
+## Example Problems ForgeAI Intends to Solve
 
-1.  Open the ForgeAI window by navigating to **Window > ForgeAI Assistant** (Shortcut: `Ctrl+Alt+F` or `Cmd+Alt+F`).
-2.  Type a command into the input box at the bottom and press Enter or click "Send".
-3.  The agent will show its thought process and, if necessary, present a plan for your approval.
-4.  Click **"Approve Plan"** to execute the proposed actions or **"Reject Plan"** to cancel.
-5.  The agent will execute the tools and show you the results of each action.
+<!-- Add your notes on example problems here. For example:
+- Automating the creation of script templates.
+- Organizing assets based on naming conventions.
+- Performing complex Git operations with natural language commands.
+-->
 
-**Example Prompt:**
+## Branch Structure
 
-> Create a new C# script at `Assets/Scripts/Player/PlayerMovement.cs` and make it log "Player moved" in the Update method.
+<!-- Describe your branch structure and old approaches here. For example:
+- **main**: The most stable version.
+- **feat/new-tool-system**: Experimentation with a new tooling architecture.
+- **poc/react-implementation**: A proof-of-concept branch for the ReAct pattern.
+-->
 
 ## Further Documentation
 
 -   **[Changelog](./CHANGELOG.md)**: A log of all major updates, features, and bug fixes.
 -   **[Design Journal](./doc/DESIGN_JOURNAL.md)**: Detailed notes on design decisions, challenges faced, and architectural evolution.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
