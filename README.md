@@ -62,18 +62,14 @@ graph TD
     A[User Prompt] --> B{ForgeAgent Loop};
     B --> C["Build Context\n(Past Observations Hidden)"];
     C --> D{LLM};
-    D -- "Thought + Action(s)" --> E[Parse Actions];
-    E --> F{Requires Approval?};
-    F -- Yes --> G[Wait for User Approval];
-    G --> H{User Action};
-    H -- Approve --> I["Execute Tool(s)"];
-    H -- Reject --> J[Add Rejection to Context];
-    F -- No --> I;
-    I --> K[Capture Observations];
-    K --> L{Task Complete?};
-    L -- No --> B;
-    L -- Yes --> M[Finish];
-    J --> B;
+    D -- "Thought + Action" --> E{Requires Approval?};
+    E -- Yes --> F[User Approval];
+    F -- Approved --> G["Execute Tool(s)"];
+    F -- Rejected --> B;
+    E -- No --> G;
+    G --> H[Observe Result];
+    H -- "Task Incomplete" --> B;
+    H -- "Task Complete" --> I[Finish];
 
     style D fill:#add8e6,stroke:#333,stroke-width:2px
 ```
