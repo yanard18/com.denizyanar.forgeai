@@ -100,27 +100,6 @@ graph LR
     -   **Explicit Approval Step**: Dangerous actions (like writing files) trigger a "Waiting for Approval" state, pausing the loop until the user consents.
     -   **Multi-Action Support**: The agent can propose multiple independent actions in a single turn to be executed in batch.
 
-## Getting Started
-
-### Prerequisites
-
--   Unity 2022.3 or newer (Project uses version `6000.3` which is a placeholder for newer versions)
-
-### Installation
-
-1.  Open the Unity Editor.
-2.  Navigate to **Window > Package Manager**.
-3.  Click the **`+`** icon in the top-left corner and select **"Add package from git URL..."**.
-4.  Enter the repository's HTTPS or SSH Git URL and click **"Add"**.
-
-### Configuration
-
-1.  Before you can use the agent, you must provide an API key.
-2.  Navigate to **Edit > Preferences > ForgeAI**.
-3.  Select your desired AI Provider (e.g., OpenAI, Gemini).
-4.  Enter your secret API key into the "API Key" field. Your key is stored securely in your local Editor Preferences and is never shared.
-5.  (Optional) Specify the exact model name you wish to use (e.g., `gpt-4o`, `gemini-1.5-pro-latest`).
-
 ## Branch Structure
 
 This repository contains two primary proof-of-concept branches, each exploring a different architectural pattern for the AI agent.
